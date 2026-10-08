@@ -1,0 +1,98 @@
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import { join } from "node:path";
+import { Router, Response, Request } from "express";
+import { fileTypeFromBuffer } from "file-type";
+import { Config, DEFAULT_AVATARS_FOLDER, defaultAvatarSvg } from "@spacebar/util";
+import { HTTPError } from "lambert-server/HTTPError";
+import { storage, internalUpload, setCacheControl } from "../util";
+
+// TODO: check premium and animated pfp are allowed in the config
+// TODO: generate different sizes of icon
+// TODO: generate different image types of icon
+// TODO: delete old icons
+
+const ANIMATED_MIME_TYPES = ["image/apng", "image/gif", "image/gifv"];
+const STATIC_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/avif", "image/svg+xml", "image/svg"];
+const ALLOWED_MIME_TYPES = [...ANIMATED_MIME_TYPES, ...STATIC_MIME_TYPES];
+
+const CLIENT_WUMPUS_USER_ID = "47835198259242069";
+
+const router = Router({ mergeParams: true });
+
+router.post(
+    "/:user_id",
+    internalUpload(async (req: Request, res: Response) => {
+        if (req.headers.signature !== Config.get().security.requestSignature) throw new HTTPError("Invalid request signature");
+        if (!req.file) throw new HTTPError("Missing file");
+        const { buffer, size } = req.file;
+        const { user_id } = req.params as { [key: string]: string };
+
+        let hash = crypto.createHash("md5").update(buffer).digest("hex");
+
+        const type = await fileTypeFromBuffer(buffer);
+        if (!type || !ALLOWED_MIME_TYPES.includes(type.mime)) throw new HTTPError("Invalid file type");
+        if (ANIMATED_MIME_TYPES.includes(type.mime)) hash = `a_${hash}`; // animated icons have a_ infront of the hash
+
+        const path = `avatars/${user_id}/${hash}`;
+        const endpoint = Config.get().cdn.endpointPublic;
+
+        await storage.set(path, buffer);
+
+        return res.json({
+            id: hash,
+            content_type: type.mime,
+            size,
+            url: `${endpoint}${req.baseUrl}/${user_id}/${hash}`,
+        });
+    }),
+);
+
+router.get("/:user_id", setCacheControl, async (req: Request, res: Response) => {
+    let { user_id } = req.params as { [key: string]: string };
+    user_id = user_id.split(".")[0]; // remove .file extension
+    const path = `avatars/${user_id}`;
+
+    const file = await storage.get(path);
+    if (!file) throw new HTTPError("not found", 404);
+    const type = await fileTypeFromBuffer(file);
+
+    res.set("Content-Type", type?.mime);
+
+    return res.send(file);
+});
+
+export const getAvatar = async (req: Request, res: Response) => {
+    const { user_id } = req.params as { [key: string]: string };
+    let { hash } = req.params as { [key: string]: string };
+    hash = hash.split(".")[0]; // remove .file extension
+    const path = `avatars/${user_id}/${hash}`;
+
+    const file = await storage.get(path);
+    if (!file && user_id === CLIENT_WUMPUS_USER_ID) {
+        const fallback = join(DEFAULT_AVATARS_FOLDER, "0.png");
+        if (await fs.stat(fallback).catch(() => null)) return res.type("png").sendFile(fallback, { cacheControl: false, dotfiles: "allow" });
+        return res.type("image/svg+xml").send(defaultAvatarSvg(0));
+    }
+    if (!file) throw new HTTPError("not found", 404);
+    const type = await fileTypeFromBuffer(file);
+
+    res.set("Content-Type", type?.mime);
+
+    return res.send(file);
+};
+
+router.get("/:user_id/:hash", setCacheControl, getAvatar);
+router.get("/:user_id/archived/:avatar_id/:hash", setCacheControl, getAvatar);
+
+router.delete("/:user_id/:id", async (req: Request, res: Response) => {
+    if (req.headers.signature !== Config.get().security.requestSignature) throw new HTTPError("Invalid request signature");
+    const { user_id, id } = req.params as { [key: string]: string };
+    const path = `avatars/${user_id}/${id}`;
+
+    await storage.delete(path);
+
+    return res.send({ success: true });
+});
+
+export default router;

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__INSTANCE_NAME__</title>
+    <link rel="icon" href="/favicon.svg" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100svh;
+        background: #17171c;
+        color: #f2f2f5;
+        font:
+          16px/1.6 system-ui,
+          sans-serif;
+        display: flex;
+        flex-direction: column;
+      }
+      .skip {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        padding: 8px;
+        background: #17171c;
+        transform: translateY(-200%);
+      }
+      .skip:focus-visible {
+        transform: none;
+      }
+      main {
+        flex: 1;
+        display: grid;
+        place-content: center;
+        padding: 48px 24px;
+        text-align: center;
+      }
+      .brand-icon {
+        width: 72px;
+        height: 72px;
+        margin: 0 auto 24px;
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: clamp(28px, 5vw, 40px);
+        overflow-wrap: anywhere;
+      }
+      p {
+        margin: 0 0 32px;
+      }
+      a {
+        color: #b9abff;
+        text-underline-offset: 3px;
+      }
+      a:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 4px;
+      }
+      nav {
+        display: flex;
+        gap: 24px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      nav a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+      }
+      .login {
+        padding: 8px 24px;
+        background: #7b5cff;
+        color: #fff;
+        border-radius: 8px;
+        text-decoration: none;
+      }
+      footer {
+        padding: 16px 24px calc(16px + env(safe-area-inset-bottom));
+        text-align: center;
+        font-size: 14px;
+      }
+      footer a {
+        display: inline-block;
+        min-height: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <main id="main">
+      __INSTANCE_ICON__
+      <h1>Welcome to __INSTANCE_NAME__</h1>
+      <p>Chat with your community on this Meowcord instance.</p>
+      <nav aria-label="Instance">
+        <a class="login" href="/login">Sign in</a><a href="/register">Create an account</a
+        ><a href="/status">View status</a>
+      </nav>
+    </main>
+    <footer>
+      this instance is running <a href="https://github.com/meowcorded/meowcord">meowcord</a>!
+    </footer>
+  </body>
+</html>

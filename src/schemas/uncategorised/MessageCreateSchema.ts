@@ -1,0 +1,100 @@
+import { Snowflake } from "../Identifiers";
+import {
+    InteractionType,
+    AllowedMentions,
+    MessageReference,
+    ApplicationCommandType,
+    BaseMessageComponents,
+    Embed,
+    PollAnswer,
+    PollMedia,
+    PublicUser,
+    float,
+    base64str,
+    E2eeEnvelope,
+} from "@spacebar/schemas";
+
+export type BaseMessageCreateAttachment = {
+    filename: string;
+    title?: string; // clips only?
+    description?: string; // alt text
+
+    duration_secs?: float; //flat
+    waveform?: base64str; //base64 byte array
+
+    is_clip?: boolean;
+    is_thumbnail?: boolean;
+    is_remix?: boolean;
+    is_spoiler?: boolean;
+
+    clip_created_at?: Date;
+    clip_participant_ids?: Snowflake[];
+};
+
+export type MessageCreateAttachment = BaseMessageCreateAttachment & {
+    id: string;
+};
+
+export type MessageCreateCloudAttachment = BaseMessageCreateAttachment & {
+    id?: string;
+    uploaded_filename: string;
+    original_content_type?: string;
+};
+
+export interface MessageCreateSchema {
+    type?: number;
+    content?: string;
+    mobile_network_type?: string;
+    /**
+     * @maxLength 25
+     */
+    nonce?: string;
+    channel_id?: string;
+    tts?: boolean;
+    flags?: number;
+    embeds?: Embed[] | null;
+    embed?: Embed | null;
+    // TODO: ^ embed is deprecated in favor of embeds (https://discord.com/developers/docs/resources/channel#message-object)
+    allowed_mentions?: AllowedMentions | null;
+    message_reference?: MessageReference | null;
+    payload_json?: string;
+    file?: { filename: string };
+    // TODO: we should create an interface for attachments
+    attachments?: (MessageCreateAttachment | MessageCreateCloudAttachment)[];
+    sticker_ids?: string[] | null; // null check: fixes Discord-Go
+    components?: BaseMessageComponents[] | null; // null check: fixes Discord-Go
+    // TODO: Fix TypeScript errors in src\api\util\handlers\Message.ts once this is enabled
+    poll?: PollCreationSchema;
+    enforce_nonce?: boolean; // For Discord compatibility, it's the default behavior here
+    applied_tags?: string[]; // Not implemented yet, for webhooks in forums
+    thread_name?: string; // Not implemented yet, for webhooks
+    avatar_url?: string; // Not implemented yet, for webhooks
+    interaction?: MessageInteractionSchema;
+    interaction_metadata?: MessageInteractionSchema;
+    encrypted?: E2eeEnvelope | null;
+}
+
+// TypeScript complains once this is used above
+export interface PollCreationSchema {
+    question: PollMedia;
+    answers: PollAnswer[];
+    duration?: number;
+    allow_multiselect?: boolean;
+    layout_type?: number;
+}
+
+interface MessageInteractionSchema {
+    id: string;
+    type: InteractionType;
+    name: string;
+    command_type?: ApplicationCommandType;
+    ephemerality_reason?: number;
+    user?: PublicUser; // It has to be optional cause LSP gives an errors for some reason
+    user_id?: string;
+    authorizing_integration_owners?: object; // It has to be optional cause LSP gives an errors for some reason
+    original_response_message_id?: Snowflake;
+    interacted_message_id?: Snowflake;
+    triggering_interaction_metadata?: MessageInteractionSchema;
+    target_user?: PublicUser;
+    target_message_id?: Snowflake;
+}

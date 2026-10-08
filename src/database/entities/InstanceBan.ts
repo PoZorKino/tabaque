@@ -1,0 +1,103 @@
+import { Column, CreateDateColumn, Entity, FindOptionsWhere, Index, JoinColumn, OneToOne } from "typeorm";
+import { BaseClass } from "./BaseClass";
+
+@Entity({
+    name: "instance_bans",
+})
+export class InstanceBan extends BaseClass {
+    @Column({ type: "bigint" })
+    @CreateDateColumn()
+    created_at: Date = new Date();
+
+    @Column()
+    reason: string;
+
+    @Index("IDX_instance_ban_user_id", { type: "hash" })
+    @Column({ type: "int8", nullable: true })
+    user_id?: string;
+
+    @Index("IDX_instance_ban_fingerprint", { type: "hash" })
+    @Column({ nullable: true })
+    fingerprint?: string;
+
+    @Index("IDX_instance_ban_ip_address", { type: "hash" })
+    @Column({ nullable: true })
+    ip_address?: string;
+
+    // chain of trust type tracking
+
+    @Column({ default: false })
+    is_allowlisted: boolean = false;
+
+    @Column({ default: false })
+    is_from_other_instance_ban: boolean = false;
+
+    @Column({ nullable: true })
+    origin_instance_ban_id?: string;
+
+    @JoinColumn({
+        name: "origin_instance_ban_id",
+        foreignKeyConstraintName: "FK_origin_instance_ban_id",
+    })
+    @OneToOne(() => InstanceBan, { nullable: true, onDelete: "SET NULL" })
+    origin_instance_ban?: InstanceBan;
+
+    private static matching(opts: { userId?: string; ipAddress?: string; fingerprint?: string }) {
+        const optionalChecks: FindOptionsWhere<InstanceBan>[] = [{ user_id: opts.userId }];
+        if (opts?.ipAddress) optionalChecks.push({ ip_address: opts.ipAddress });
+        if (opts?.fingerprint) optionalChecks.push({ fingerprint: opts.fingerprint });
+        return optionalChecks;
+    }
+
+    static hasInstanceBans(opts: { userId?: string; ipAddress?: string; fingerprint?: string }) {
+        return InstanceBan.exists({ where: InstanceBan.matching(opts) });
+    }
+
+    static async findInstanceBans(opts: { userId?: string; ipAddress?: string; fingerprint?: string; propagateBan?: boolean }) {
+        const instanceBans = await InstanceBan.find({ where: InstanceBan.matching(opts) });
+
+        const banReasons = [];
+        for (const ban of instanceBans) {
+            if (ban.is_allowlisted) continue;
+            if (opts?.fingerprint && ban.fingerprint === opts.fingerprint) banReasons.push("fingerprint");
+            if (opts?.ipAddress && ban.ip_address === opts.ipAddress) banReasons.push("ipAddress");
+            if (opts?.userId && ban.user_id === opts?.userId) banReasons.push("userId");
+        }
+
+        const banViralityPromises: Promise<InstanceBan>[] = [];
+        if (opts.propagateBan && banReasons.length > 0) {
+            if (opts?.ipAddress && !instanceBans.find((b) => b.ip_address === opts.ipAddress))
+                banViralityPromises.push(
+                    InstanceBan.create({
+                        user_id: opts.userId,
+                        ip_address: opts.ipAddress,
+                        reason: "Propagated from other instance ban",
+                        is_from_other_instance_ban: true,
+                        origin_instance_ban: instanceBans[0],
+                    }).save(),
+                );
+            if (opts?.fingerprint && !instanceBans.find((b) => b.fingerprint === opts.fingerprint))
+                banViralityPromises.push(
+                    InstanceBan.create({
+                        user_id: opts.userId,
+                        fingerprint: opts.fingerprint,
+                        reason: "Propagated from other instance ban",
+                        is_from_other_instance_ban: true,
+                        origin_instance_ban: instanceBans[0],
+                    }).save(),
+                );
+            if (opts?.userId && !instanceBans.find((b) => b.user_id === opts.userId))
+                banViralityPromises.push(
+                    InstanceBan.create({
+                        user_id: opts.userId,
+                        reason: "Propagated from other instance ban",
+                        is_from_other_instance_ban: true,
+                        origin_instance_ban: instanceBans[0],
+                    }).save(),
+                );
+        }
+
+        await Promise.all(banViralityPromises);
+        return banReasons;
+    }
+}

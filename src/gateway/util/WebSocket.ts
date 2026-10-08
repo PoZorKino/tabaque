@@ -1,0 +1,53 @@
+import WS from "ws";
+import { Deflate, Inflate } from "fast-zlib";
+import { Decoder, Encoder } from "@toondepauw/node-zstd";
+import { Session } from "@spacebar/database";
+import { Intents, ListenEventOpts, Permissions } from "@spacebar/util";
+import { QoSPayload } from "../opcodes/Heartbeat";
+import { Capabilities } from "./Capabilities";
+import { Payload } from "./Constants";
+
+export interface WebSocket extends WS {
+    recentTransactions: string[];
+    version: number;
+    user_id: string;
+    session_id: string;
+    accessToken: string;
+    encoding: "etf" | "json";
+    compress?: "zlib-stream" | "zstd-stream";
+    ipAddress?: string;
+    userAgent?: string; // for cdn request signing
+    fingerprint?: string;
+    shard_count?: bigint;
+    shard_id?: bigint;
+    deflate?: Deflate;
+    inflate?: Inflate;
+    zstdEncoder?: Encoder;
+    zstdDecoder?: Decoder;
+    heartbeatTimeout: NodeJS.Timeout;
+    readyTimeout: NodeJS.Timeout;
+    intents: Intents;
+    sequence: number;
+    permissions: Record<string, Permissions>;
+    events: Record<string, undefined | (() => Promise<unknown>)>;
+    member_events: Record<string, () => Promise<unknown>>;
+    listen_options: ListenEventOpts;
+    capabilities?: Capabilities;
+    large_threshold: number;
+    qos?: QoSPayload;
+    session?: Session;
+    listenerCleanup?: () => Promise<void>;
+    resumedBy?: WebSocket;
+    resumeBuffer?: Payload[];
+    replayBuffer?: Payload[];
+    resumeTimer?: NodeJS.Timeout;
+    pendingDispatches?: Payload[];
+    commandWindow?: { start: number; count: number };
+    presenceHistory?: number[];
+    presenceTimer?: NodeJS.Timeout;
+    isBot?: boolean;
+    fullMemberRequests?: Record<string, number>;
+    affinityUsers?: Set<string>;
+    presenceSubscriptions?: Record<string, Set<string>>;
+    member_lists?: Record<string, { channel_id: string; ranges: [number, number][]; key: string }>;
+}
