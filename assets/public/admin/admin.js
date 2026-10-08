@@ -578,7 +578,6 @@ const TABS = {
   users: renderUsers,
   badges: renderBadges,
   experiments: renderExperiments,
-  help: renderHelp,
   changelog: renderChangelog,
   audit: renderAudit,
   games: renderGames,
@@ -3869,65 +3868,6 @@ async function renderChangelog(view) {
             if (!confirm("Delete this entry? It disappears from What's new right away.")) return;
             const done = await act(btn, () => api(`/admin/changelogs/${encodeURIComponent(btn.dataset.clDelete)}`, { method: "DELETE" }), "Entry deleted");
             if (done) renderChangelog(view);
-        });
-    }
-}
-
-/* ---------- help center ---------- */
-
-async function renderHelp(view) {
-    const articles = await api("/admin/help");
-    const rows = articles
-        .map(
-            (a) => `<tr>
-                <td><strong>${escapeHtml(a.title)}</strong></td>
-                
-                <td>${a.body.length.toLocaleString()} chars</td>
-                <td><a href="/hc/articles/${encodeURIComponent(a.id)}" target="_blank">View</a></td>
-                <td><button class="btn small" data-help-edit="${a.id}" type="button">Edit</button> <button class="btn small danger" data-help-delete="${a.id}" type="button">Delete</button></td>
-            </tr>`,
-        )
-        .join("");
-    view.innerHTML = `
-        <div class="section-head">
-            <h2>Help center</h2>
-            <div class="row" style="gap:8px">
-                <button class="btn primary" id="help-new" type="button">New article</button>
-            </div>
-        </div>
-        <p class="muted">Public at <a href="/hc" target="_blank">/hc</a>. Articles are written here and shown as-is.</p>
-        ${articles.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Size</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="card empty">No articles yet.</div>'}`;
-
-    const editor = (article) => {
-        const body = openDrawer(article ? "Edit article" : "New article", `
-            <form id="help-form" class="stack">
-                <label>Title<input name="title" required value="${escapeHtml(article?.title ?? "")}" /></label>
-                <label>Body (HTML)<span class="hint">Shown as-is on /hc. Use links like /hc/articles/&lt;id&gt; between articles.</span><textarea name="body" rows="18">${escapeHtml(article?.body ?? "")}</textarea></label>
-                <div class="form-actions"><button class="btn primary" type="submit">Save article</button></div>
-            </form>`);
-        if (!body) return;
-        $("#help-form", body).addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const form = e.currentTarget;
-            const payload = { title: form.title.value, body: form.body.value };
-            const path = article ? `/admin/help/${encodeURIComponent(article.id)}` : "/admin/help";
-            const done = await act($("button[type=submit]", form), () => api(path, { method: article ? "PATCH" : "POST", body: payload }), "Article saved");
-            if (done) {
-                closeDrawer();
-                renderHelp(view);
-            }
-        });
-    };
-
-    $("#help-new", view).addEventListener("click", () => editor(null));
-    for (const btn of $$("[data-help-edit]", view)) {
-        btn.addEventListener("click", async () => editor(await api(`/admin/help`).then((list) => list.find((a) => a.id === btn.dataset.helpEdit))));
-    }
-    for (const btn of $$("[data-help-delete]", view)) {
-        btn.addEventListener("click", async () => {
-            if (!confirm("Delete this article? It disappears from /hc right away.")) return;
-            const done = await act(btn, () => api(`/admin/help/${encodeURIComponent(btn.dataset.helpDelete)}`, { method: "DELETE" }), "Article deleted");
-            if (done) renderHelp(view);
         });
     }
 }

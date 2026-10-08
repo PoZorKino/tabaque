@@ -1,4 +1,4 @@
-name: meowcord
+name: fosscord
 
 x-server: &server
   build:
