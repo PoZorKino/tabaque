@@ -11,6 +11,7 @@ export default definePlugin({
     gateway: () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`,
     patches: [
         {
+            // voice endpoints are always dialed over wss; follow the page's own scheme so plain-http setups can reach their SFU
             find: '"wss:":"ws:"',
             replacement: {
                 match: /\/\^https\/\.test\("https:"\)/,

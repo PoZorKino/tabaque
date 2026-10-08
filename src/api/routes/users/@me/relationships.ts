@@ -1,3 +1,4 @@
+import { assertNotLimitedAccess } from "@spacebar/api/util/utility/accountStanding";
 import { Request, Response, Router } from "express";
 import { ILike } from "typeorm";
 import { HTTPError } from "lambert-server/HTTPError";
@@ -337,6 +338,9 @@ async function updateRelationship(req: Request, res: Response, friend: User, typ
 
     const ownRow = user.relationships.find((x) => x.to_id === id);
     const theirRow = friend.relationships.find((x) => x.to_id === req.user_id);
+    // sending a request is restricted for limited accounts; accepting one that was sent to them is not
+    if ((type === undefined || type === RelationshipType.FRIEND) && theirRow?.type !== RelationshipType.OUTGOING_REQUEST)
+        await assertNotLimitedAccess(req.user_id, "send friend requests");
     let relationship = ownRow?.type === RelationshipType.NONE && type !== RelationshipType.BLOCKED ? undefined : ownRow;
     const friendRequest = theirRow?.type === RelationshipType.NONE ? undefined : theirRow;
 

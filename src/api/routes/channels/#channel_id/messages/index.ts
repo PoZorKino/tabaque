@@ -1,3 +1,4 @@
+import { isModerationHidden } from "@spacebar/util";
 import { assertCanSendDirectMessage, assertGuildVerification, assertNoHarmfulLinks, checkAutomod, publishUserMessage, recordGuildMemberDm } from "@spacebar/api/util";
 import { route } from "@spacebar/api/middlewares";
 import { Application, Attachment, Channel, GuildInsights, Member, Message, ReadState, Recipient, User, Webhook } from "@spacebar/database";
@@ -146,6 +147,7 @@ router.get(
             messages = await Message.find(query);
             if (after) messages.reverse();
         }
+        messages = messages.filter((message) => !isModerationHidden(message));
 
         const attach = async <K extends "webhook" | "application" | "thread">(
             key: K,

@@ -4630,6 +4630,7 @@ ${digest}`;
           : null;
       if (revoked && (await store.get("device"))?.deviceId === revoked) await this.wipeLocal(true);
       this.encryptedChannels = new Set(state.channels);
+      this.plainChannels = new Set(state.plain_channels ?? []);
       this.privateByDefault = state.private_by_default ?? this.privateByDefault;
       this.identity = (await store.get("identity")) ?? null;
       this.trustedKey = (await store.get("trusted-identity")) ?? null;
@@ -4972,7 +4973,13 @@ ${digest}`;
       this.directory.clear();
       this.members.clear();
     }
+    setChannelPlain(channelId) {
+      this.encryptedChannels.delete(channelId);
+      this.plainChannels.add(channelId);
+      this.emit();
+    }
     setChannelEncrypted(channelId) {
+      this.plainChannels.delete(channelId);
       this.encryptedChannels.add(channelId);
       this.emit();
     }
@@ -5556,6 +5563,32 @@ backup:${this.userId}`,
       ctx.attachments.apply(message, payload);
       payloads.set(message.id, payload);
     };
+    const previewed = /* @__PURE__ */ new Map();
+    const previews = (message) => {
+      try {
+        if (localStorage.getItem("fosscord-e2ee-previews") === "0") return;
+      } catch {
+      }
+      const text = typeof message.content === "string" ? message.content : "";
+      const urls = [...new Set((text.match(/<?https?:\/\/[^\s<>]+>?/g) ?? []).filter((u) => !u.startsWith("<")))].slice(0, 5);
+      if (!urls.length) return;
+      const apply = (found) => {
+        const embeds = urls.flatMap((u) => found[u] ?? previewed.get(u) ?? []);
+        if (!embeds.length) return;
+        const target = readable.get(message.channel_id)?.get(message.id) ?? clone(message);
+        const copy = target;
+        copy.embeds = embeds;
+        copy.flags = Number(copy.flags ?? 0) & ~4;
+        redispatch(copy);
+      };
+      const missing = urls.filter((u) => !previewed.has(u));
+      if (!missing.length) return void setTimeout(() => apply({}), 300);
+      ctx.fetchEmbeds(missing).then((found) => {
+        for (const u of missing) previewed.set(u, found[u] ?? []);
+        apply(found);
+      }).catch(() => {
+      });
+    };
     const decryptOne = (message) => {
       const key = `${message.id}:${message.encrypted?.sig}`;
       const sync = engine.cached(message);
@@ -5564,6 +5597,7 @@ backup:${this.userId}`,
         states.set(message.id, { state: "decrypted" });
         retry.delete(message.id);
         remember(message);
+        previews(message);
         return Promise.resolve();
       }
       if (!ctx.isReady()) {
@@ -5590,6 +5624,7 @@ backup:${this.userId}`,
             retry.delete(message.id);
             show(message, payload);
             remember(message);
+            previews(message);
           } catch (error) {
             const code = error instanceof E2eeError ? error.code : null;
             const state =
@@ -6951,6 +6986,12 @@ ${approver}`;
         (await engine.channelMembers(channelId)).map((id) => engine.profile(id)),
       );
       dialog(t("Safety numbers"), (body, actions, { close }) => {
+        actions.append(
+          button(t("Turn off encryption"), "danger", () => {
+            close();
+            confirmDisable(channelId);
+          })
+        );
         body.insertAdjacentHTML(
           "beforeend",
           `<p>${escape(t("Compare these numbers with each person in a call or face to face. If they match, nobody is intercepting your messages. Mark them as verified so you're warned if they change."))}</p>`,
@@ -8266,6 +8307,7 @@ ${approver}`;
     if (ok) hooks.retryAll();
   });
   var hooks = createHooks({
+    fetchEmbeds: async (urls) => (await api.request("post", "/e2ee/embeds", { urls })).embeds ?? {},
     engine,
     attachments,
     sticker,

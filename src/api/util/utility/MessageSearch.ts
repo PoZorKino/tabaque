@@ -1,7 +1,7 @@
 import { HTTPError } from "lambert-server/HTTPError";
 import { Brackets, In } from "typeorm";
 import { Channel, Message, Recipient, ThreadMember } from "@spacebar/database";
-import { FieldErrors, getPermission, MessageFlags } from "@spacebar/util";
+import { FieldErrors, getPermission, MessageFlags, isModerationHidden } from "@spacebar/util";
 import { MessageType } from "@spacebar/schemas";
 
 export type MessageSearchQuery = Record<string, unknown>;
@@ -62,6 +62,9 @@ export async function getSearchableChannels(userId: string, guildId: string | un
     });
 }
 
+// the text inside embeds: titles, descriptions and field values. Safety notices keep their text there, not in content.
+const EMBED_TEXT = `(SELECT string_agg(concat_ws(' ', e->>'title', e->>'description', (SELECT string_agg(f->>'value', ' ') FROM jsonb_array_elements(coalesce(e->'fields', '[]'::jsonb)) f)), ' ') FROM jsonb_array_elements(m.embeds) e)`;
+
 export async function searchMessages(userId: string, channels: Channel[], query: MessageSearchQuery) {
     const limit = Number(query.limit ?? 25);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new HTTPError("limit must be between 1 and 100", 422);
@@ -87,11 +90,7 @@ export async function searchMessages(userId: string, channels: Channel[], query:
         .trim()
         .split(/\s+/)
         .filter((word) => word.length);
-    words.forEach((word, i) =>
-        qb.andWhere(`m.content ILIKE :word${i}`, {
-            [`word${i}`]: `%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%`,
-        }),
-    );
+    words.forEach((word, i) => qb.andWhere(`(m.content ILIKE :word${i} OR ${EMBED_TEXT} ILIKE :word${i})`, { [`word${i}`]: `%${word.replace(/[\\%_]/g, (c) => `\\${c}`)}%` }));
 
     const authors = list(query.author_id);
     if (authors.length) qb.andWhere("m.author_id IN (:...authors)", { authors });
@@ -161,7 +160,7 @@ export async function searchMessages(userId: string, channels: Channel[], query:
         : [];
     await Message.fillReplies(found);
     const byId = new Map(found.map((message) => [message.id, message]));
-    const messages = ids.map((id) => byId.get(id)).filter((message): message is Message => !!message);
+    const messages = ids.map((id) => byId.get(id)).filter((message): message is Message => !!message && !isModerationHidden(message));
     return { messages, total_results };
 }
 

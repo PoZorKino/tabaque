@@ -1,3 +1,4 @@
+import { startViolationSweep } from "@spacebar/api/util/utility/safetyNotices";
 import http from "node:http";
 import http2 from "node:http2";
 import net from "node:net";
@@ -131,6 +132,7 @@ async function main() {
     if (fs.existsSync("/proc/self/comm")) fs.writeFileSync("/proc/self/comm", `spacebar-bundle-${cluster.worker ? cluster.worker.id : port}`);
     process.title = `sb-bundle-${cluster.worker ? cluster.worker.id : port}`;
 
+    startViolationSweep();
     console.log(`[Server] ${green(`Listening on port ${bold(port)}`)}`);
 }
 

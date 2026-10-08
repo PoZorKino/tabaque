@@ -1,3 +1,4 @@
+import { assertCanStartDirectMessage } from "@spacebar/api/util/utility/accountStanding";
 import { Request, Response, Router } from "express";
 import { route } from "@spacebar/api/middlewares";
 import { HTTPError } from "lambert-server/HTTPError";
@@ -49,6 +50,7 @@ router.post(
     async (req: Request, res: Response) => {
         const body = req.body as DmChannelCreateSchema;
         const targets = body.recipients || (body.recipient_id ? [body.recipient_id] : []);
+        await assertCanStartDirectMessage(req.user_id, targets);
         // the creator is in the group too
         const maxOthers = Config.get().limits.channel.maxGroupDmRecipients - 1;
         if (new Set(targets.filter((id) => id !== req.user_id)).size > maxOthers)

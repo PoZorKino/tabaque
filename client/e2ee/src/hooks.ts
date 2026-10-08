@@ -49,6 +49,7 @@ export interface HookContext {
     onCredentials: (path: string, body: { password?: unknown; new_password?: unknown }, response: unknown) => void;
     onLogout: () => void;
     onError: (error: unknown, channelId: string) => void;
+    fetchEmbeds: (urls: string[]) => Promise<Record<string, unknown[]>>;
 }
 
 const AUTH_URL = /^\/auth\/(login|register)$/;
@@ -98,6 +99,37 @@ export const createHooks = (ctx: HookContext) => {
         payloads.set(message.id, payload);
     };
 
+    // Encrypted messages carry no server-made previews. The links found after decrypting are looked up one by one
+    // (the server learns the links, not the message) and the previews are attached on this device only
+    const previewed = new Map<string, unknown[]>();
+    const previews = (message: RawMessage) => {
+        try {
+            if (localStorage.getItem("fosscord-e2ee-previews") === "0") return;
+        } catch {
+            /* storage unavailable: previews stay on */
+        }
+        const text = typeof message.content === "string" ? message.content : "";
+        const urls = [...new Set((text.match(/<?https?:\/\/[^\s<>]+>?/g) ?? []).filter((u) => !u.startsWith("<")))].slice(0, 5);
+        if (!urls.length) return;
+        const apply = (found: Record<string, unknown[]>) => {
+            const embeds = urls.flatMap((u) => found[u] ?? previewed.get(u) ?? []);
+            if (!embeds.length) return;
+            const target = readable.get(message.channel_id)?.get(message.id) ?? clone(message);
+            const copy = target as RawMessage & { embeds?: unknown[]; flags?: number };
+            copy.embeds = embeds;
+            copy.flags = Number(copy.flags ?? 0) & ~4;
+            redispatch(copy);
+        };
+        const missing = urls.filter((u) => !previewed.has(u));
+        if (!missing.length) return void setTimeout(() => apply({}), 300);
+        ctx.fetchEmbeds(missing)
+            .then((found) => {
+                for (const u of missing) previewed.set(u, found[u] ?? []);
+                apply(found);
+            })
+            .catch(() => {});
+    };
+
     const decryptOne = (message: RawMessage) => {
         const key = `${message.id}:${message.encrypted?.sig}`;
         const sync = engine.cached(message);
@@ -106,6 +138,7 @@ export const createHooks = (ctx: HookContext) => {
             states.set(message.id, { state: "decrypted" });
             retry.delete(message.id);
             remember(message);
+            previews(message);
             return Promise.resolve();
         }
         if (!ctx.isReady()) {
@@ -132,6 +165,7 @@ export const createHooks = (ctx: HookContext) => {
                     retry.delete(message.id);
                     show(message, payload);
                     remember(message);
+                    previews(message);
                 } catch (error) {
                     const code = error instanceof E2eeError ? error.code : null;
                     const state: MessageState = code === "LOCKED" ? "locked" : code === "NO_KEY" ? "missing" : code === "RESET" ? "reset" : "failed";

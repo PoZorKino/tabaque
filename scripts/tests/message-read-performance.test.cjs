@@ -31,6 +31,7 @@ function load(relative, database) {
                 return {
                     Config: { get: () => ({ limits: { message: {} } }) },
                     MessageFlags: { FLAGS: { EPHEMERAL: 64 } },
+                    isModerationHidden: () => false,
                     FieldErrors: (x) => new Error(JSON.stringify(x)),
                 };
             if (id === "@spacebar/schemas")

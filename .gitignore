@@ -52,3 +52,9 @@ scripts/dev/.scale-tokens.json
 docs/qa
 /releases/
 .claude
+# local data backups
+assets/*.bak
+assets/*.merged-bak
+assets/*.pre-*
+.e2ee-recovery.key
+.e2ee-system/

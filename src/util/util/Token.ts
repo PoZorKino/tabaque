@@ -5,9 +5,9 @@ import fs from "node:fs/promises";
 import jwt from "jsonwebtoken";
 import { HTTPError } from "lambert-server/HTTPError";
 import { MoreThan } from "typeorm";
-import { AccountStandingState } from "@spacebar/schemas";
-import { InstanceBan, OAuth2Token, Session, User } from "@spacebar/database";
-import { Random } from "@spacebar/extensions";
+import { AccountStandingState, AppealStatusValue } from "@spacebar/schemas";
+import { InstanceBan, OAuth2Token, Session, User, UserViolation } from "@spacebar/database";
+import { Random, sleep, Stopwatch } from "@spacebar/extensions";
 import { Config } from "./Config";
 import { OrmUtils } from "@spacebar/util";
 import { clearInterval, setInterval } from "node:timers";
@@ -105,7 +105,7 @@ export const checkToken = (
                 return rejectAndLog(reject, 401, "Invalid Token");
             }
 
-            if (user.disabled || user.account_standing === AccountStandingState.SUSPENDED) {
+            if (user.disabled || user.account_standing === AccountStandingState.SUSPENDED || (await hasActiveTempBan(user.id))) {
                 logAuth("validateUser rejected: User disabled");
                 return rejectAndLog(reject, 401, "User disabled");
             }
@@ -459,3 +459,16 @@ class JwtKeypair {
         this.fingerprint = fingerprint;
     }
 }
+
+// temporary bans last until their violation expires; checked on every token, cached so that is not a query per request
+const tempBanCache = new Map<string, { at: number; banned: boolean }>();
+async function hasActiveTempBan(user_id: string) {
+    const hit = tempBanCache.get(user_id);
+    if (hit && Date.now() - hit.at < 30_000) return hit.banned;
+    const violations = await UserViolation.find({ where: { user_id, expires_at: MoreThan(new Date()) } });
+    const banned = violations.some((v) => v.appeal_status !== AppealStatusValue.CLASSIFICATION_INVALIDATED && v.actions?.some((a) => a.action_type === 1));
+    tempBanCache.set(user_id, { at: Date.now(), banned });
+    return banned;
+}
+
+export const clearTempBanCache = (user_id: string) => tempBanCache.delete(user_id);

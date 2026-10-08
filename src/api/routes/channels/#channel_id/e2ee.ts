@@ -48,10 +48,18 @@ router.put(
         if (!isE2eeChannelType(channel.type)) throw E2eeErrors.UNSUPPORTED;
         await Channel.ensureDefaultPrivateEncryption(channel, req.user_id);
         if (!enabled) {
-            if (channel.e2ee_enabled_at) throw E2eeErrors.CANNOT_DISABLE;
+            if (!channel.e2ee_disabled_at || channel.e2ee_enabled_at) {
+                const now = new Date();
+                channel.e2ee_enabled_at = null;
+                channel.e2ee_disabled_at = now;
+                await Channel.update({ id: channel.id }, { e2ee_enabled_at: null, e2ee_disabled_at: now });
+                const off = { ...toResponse(channel), user_id: req.user_id };
+                await Promise.all((channel.recipients ?? []).map((r) => emitEvent({ event: "CHANNEL_E2EE_UPDATE", user_id: r.user_id, data: off })));
+            }
             return res.json(toResponse(channel));
         }
         if (channel.e2ee_enabled_at) return res.json(toResponse(channel));
+        channel.e2ee_disabled_at = null;
 
         const members = channel.recipients?.map((r) => r.user_id) ?? [];
         const devices = await E2eeDevice.find({
@@ -67,7 +75,7 @@ router.put(
             });
 
         channel.e2ee_enabled_at = new Date();
-        await Channel.update({ id: channel.id }, { e2ee_enabled_at: channel.e2ee_enabled_at });
+        await Channel.update({ id: channel.id }, { e2ee_enabled_at: channel.e2ee_enabled_at, e2ee_disabled_at: null });
         const data = { ...toResponse(channel), user_id: req.user_id };
         await Promise.all(members.map((id) => emitEvent({ event: "CHANNEL_E2EE_UPDATE", user_id: id, data })));
         await Channel.sendSystemMessage(channel, req.user_id, MessageType.E2EE_ENABLED);

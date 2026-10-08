@@ -22,6 +22,7 @@ import {
 import { ProcessLifecycle, SystemdLifecycle } from "../util/util/ProcessLifecycle";
 import { Monitoring } from "../util/monitoring/Monitoring";
 import { BcryptWorkerPool } from "../util/util/workers/bcrypt/BcryptWorkerPool";
+import { AdminAudit } from "./middlewares/AdminAudit";
 import { Authentication, CORS, ExternalProxy, ImageProxy, KlipyProxy, BodyParser, ErrorHandler, initRateLimits, initTranslation } from "./middlewares";
 import { initInstance } from "./util/handlers/Instance";
 import { initEmbeddedActivities } from "./activities";
@@ -87,6 +88,7 @@ export class SpacebarServer extends Server {
         this.app.use(CORS);
         this.app.use(BodyParser({ inflate: true, limit: "10mb" }));
         this.app.use(Authentication);
+        this.app.use(AdminAudit);
 
         const app = this.app;
         const api = Router({ mergeParams: true });

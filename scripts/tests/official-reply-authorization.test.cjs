@@ -32,6 +32,7 @@ function harness({ target = { id: "200", system: true, flags: 8 }, relationships
             RelationshipType: { BLOCKED: 2, FRIEND: 1 },
             UserFlags: { FLAGS: { SYSTEM: 8 } },
         },
+        "../utility/accountStanding": { limitedSince: async () => null },
         "../utility/systemAccounts.js": {
             getSystemAccount: async (kind) => {
                 assert.equal(kind, "official");

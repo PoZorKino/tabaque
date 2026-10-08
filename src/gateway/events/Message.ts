@@ -11,6 +11,7 @@ import { HTTPError } from "lambert-server";
 
 const bigIntJson = BigIntJson({ storeAsString: true });
 
+// erlpack hands 64-bit integers over as BigInt, which neither JSON.stringify nor the JSON columns can store; ids travel as strings anyway
 function jsonSafe(value: unknown): unknown {
     if (typeof value === "bigint") return value.toString();
     if (Array.isArray(value)) return value.map(jsonSafe);

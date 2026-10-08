@@ -1,8 +1,9 @@
 import { Message, User, UserViolation } from "@spacebar/database";
-import { Config, emitEvent, getRights, MessageUpdateEvent } from "@spacebar/util";
-import { AccountStandingState, AdminViolationCreateSchema, AppealStatusValue, Embed, EmbedType } from "@spacebar/schemas";
-import { accountStanding, getUserViolations, VIOLATION_TYPE_LABELS } from "./accountStanding";
+import { broadcastUserUpdate, Config, emitEvent, getRights, MessageFlags, MessageUpdateEvent, UserUpdateEvent } from "@spacebar/util";
+import { LessThanOrEqual } from "typeorm";
+import { AccountStandingState, AdminViolationCreateSchema, AppealStatusValue, Embed, EmbedType, PrivateUserProjection, UserFlags } from "@spacebar/schemas";
 import { standingLink } from "./safetyMessageText";
+import { accountStanding, clearEnforcementCaches, getUserViolations, isActiveViolation, VIOLATION_TYPE_LABELS } from "./accountStanding";
 import { getSystemAccount, sendSystemDM } from "./systemAccounts";
 
 // What users and staff hear about violations: the official account DMs users (violation notices, standing drops,
@@ -19,8 +20,10 @@ const STANDING_NAMES: Partial<Record<AccountStandingState, string>> = {
 const unix = (date: Date) => String(Math.floor(date.getTime() / 1000));
 const field = (name: string, value: string) => ({ name, value });
 
-// the card clients draw for safety_system_notification embeds: icon/theme are "default" or "danger", ctas are
-// "policy_violation_detail" (See Details, opens the violation) and "learn_more_link"
+// The official DM is read-only, so the client draws its own safety cards from structured fields (its embed parser
+// reads these names). A plain embed would show up as a raw list.
+const DANGER = 0xf23f43;
+const card = (name: string, value: string) => ({ name, value });
 function systemNotification(opts: { header: string; body: string; danger?: boolean; classificationId?: string; learnMore?: string | null }): Embed {
     const ctas = opts.learnMore ? "learn_more_link" : opts.classificationId ? "policy_violation_detail" : "learn_more_link";
     return {
@@ -35,22 +38,17 @@ function systemNotification(opts: { header: string; body: string; danger?: boole
             ...(opts.classificationId ? [field("classification_id", opts.classificationId)] : []),
             ...(opts.learnMore ? [field("learn_more_link", opts.learnMore)] : !opts.classificationId ? [field("learn_more_link", standingLink)] : []),
         ],
-    };
+    } as Embed;
 }
 
 const quietly = (what: string, promise: Promise<unknown>) => promise.catch((e) => console.error(`[Safety] couldn't ${what}`, e));
 
-/** "You broke <instance>'s community guidelines" with a Learn more that opens the violation. */
+/** "You broke <instance>'s community guidelines", the client's own violation card; tapping it opens the violation. */
 export const notifyViolation = (violation: UserViolation) =>
     quietly(
         "send a violation notice",
         sendSystemDM("official", violation.user_id, {
-            embeds: [
-                {
-                    type: "safety_policy_notice" as EmbedType,
-                    fields: [field("classification_id", violation.id), field("incident_time", unix(violation.created_at))],
-                },
-            ],
+            embeds: [{ type: "safety_policy_notice" as EmbedType, fields: [card("classification_id", violation.id), card("incident_time", unix(violation.created_at))] } as Embed],
         }),
     );
 
@@ -163,6 +161,7 @@ export async function resolveAppeal(violation: UserViolation, approved: boolean,
     violation.appeal_status = approved ? AppealStatusValue.CLASSIFICATION_INVALIDATED : AppealStatusValue.CLASSIFICATION_UPHELD;
     violation.appeal_resolved_by = staffId;
     await violation.save();
+    if (approved) await revertViolationActions(violation);
 
     const { general } = Config.get();
     const learnMore = general.tosPage || general.frontPage;
@@ -227,6 +226,165 @@ export async function handleAppealVote(message_id: string, voterId: string, emoj
 
 export const PERMANENT_VIOLATION_EXPIRY = new Date("2100-01-01T00:00:00Z");
 
+// ClassificationActionType values the staff can pick. Messages removal is not handled yet.
+const ACTION = {
+    BAN: 0,
+    TEMP_BAN: 1,
+    GLOBAL_QUARANTINE: 2,
+    REQUIRE_VERIFICATION: 3,
+    USER_SPAMMER: 5,
+    USER_CONTENT_REMOVAL: 13,
+    USER_USERNAME_MANGLED: 14,
+    USER_MESSAGE_REMOVAL: 16,
+    USER_PROFILE_MANGLED: 22,
+} as const;
+
+// connected clients keep showing the old name, avatar and flags until they are told, the same way a profile edit tells them
+async function announceUserChange(user_id: string) {
+    const updated = await User.findOneOrFail({
+        where: { id: user_id },
+        select: Object.fromEntries(PrivateUserProjection.map((key) => [key, true])),
+        relations: { avatar_decoration: true },
+    });
+    await emitEvent({ event: "USER_UPDATE", user_id, data: updated.toPrivateUser() } as unknown as UserUpdateEvent);
+    await broadcastUserUpdate(user_id);
+}
+
+// Puts the account into the state the violation asks for. Resets keep the old values on the violation.
+async function applyViolationActions(violation: UserViolation) {
+    const user = await User.findOneOrFail({
+        where: { id: violation.user_id },
+        select: { id: true, username: true, global_name: true, avatar: true, banner: true, bio: true, flags: true, disabled: true, verified: true },
+    });
+    const changes: Partial<User> = {};
+    let flags = BigInt(user.flags ?? 0);
+    for (const action of violation.actions ?? []) {
+        // temporary bans are enforced at login while the violation is active, so they need no change here
+        if (action.action_type === ACTION.GLOBAL_QUARANTINE) flags |= UserFlags.FLAGS.QUARANTINED;
+        if (action.action_type === ACTION.USER_SPAMMER) flags |= UserFlags.FLAGS.SPAMMER;
+        if (action.action_type === ACTION.BAN) {
+            action.previous = { ...action.previous, disabled: user.disabled };
+            changes.disabled = true;
+        }
+        if (action.action_type === ACTION.REQUIRE_VERIFICATION) {
+            action.previous = { ...action.previous, verified: user.verified };
+            changes.verified = false;
+        }
+        if (action.action_type === ACTION.USER_MESSAGE_REMOVAL || action.action_type === ACTION.USER_CONTENT_REMOVAL) await hideMessages(violation, action.action_type);
+        if (action.action_type === ACTION.USER_USERNAME_MANGLED) {
+            action.previous = { ...action.previous, username: user.username };
+            changes.username = `user${Math.floor(Math.random() * 1e8)}`;
+        }
+        if (action.action_type === ACTION.USER_PROFILE_MANGLED) {
+            action.previous = { ...action.previous, global_name: user.global_name ?? null, avatar: user.avatar ?? null, banner: user.banner ?? null, bio: user.bio };
+            Object.assign(changes, { global_name: null, avatar: null, banner: null, bio: "" });
+        }
+    }
+    if (flags !== BigInt(user.flags ?? 0)) changes.flags = Number(flags);
+    if (!Object.keys(changes).length) return;
+    await User.update({ id: user.id }, changes);
+    await violation.save();
+    await announceUserChange(user.id).catch((e) => console.error("[Safety] couldn't announce the account change", e));
+}
+
+// messages removal hides everything the user wrote, content removal only the messages the report flagged
+async function hideMessages(violation: UserViolation, kind: number) {
+    const bit = Number(MessageFlags.FLAGS.MODERATION_HIDDEN);
+    if (kind === ACTION.USER_MESSAGE_REMOVAL) {
+        await Message.createQueryBuilder()
+            .update()
+            .set({ flags: () => `flags | ${bit}` })
+            .where("author_id = :id", { id: violation.user_id })
+            .execute();
+    } else {
+        const ids = flaggedMessageIds(violation);
+        if (ids.length)
+            await Message.createQueryBuilder()
+                .update()
+                .set({ flags: () => `flags | ${bit}` })
+                .where("id IN (:...ids)", { ids })
+                .execute();
+    }
+}
+const flaggedMessageIds = (violation: UserViolation) =>
+    (violation.flagged_content ?? []).map((item) => (typeof item === "string" ? item : (item as { id?: string })?.id)).filter((id): id is string => typeof id === "string");
+
+async function unhideMessages(violation: UserViolation) {
+    const bit = Number(MessageFlags.FLAGS.MODERATION_HIDDEN);
+    for (const action of violation.actions ?? []) {
+        if (action.action_type === ACTION.USER_MESSAGE_REMOVAL) {
+            await Message.createQueryBuilder()
+                .update()
+                .set({ flags: () => `flags & ~${bit}` })
+                .where("author_id = :id", { id: violation.user_id })
+                .execute();
+        }
+        if (action.action_type === ACTION.USER_CONTENT_REMOVAL) {
+            const ids = flaggedMessageIds(violation);
+            if (ids.length)
+                await Message.createQueryBuilder()
+                    .update()
+                    .set({ flags: () => `flags & ~${bit}` })
+                    .where("id IN (:...ids)", { ids })
+                    .execute();
+        }
+    }
+}
+
+// Undoes the account effects of the given action types. Resets keep their old values in `previous`.
+async function revertTypes(violation: UserViolation, types: number[]) {
+    const user = await User.findOneOrFail({ where: { id: violation.user_id }, select: { id: true, flags: true } });
+    const changes: Partial<User> = {};
+    let flags = BigInt(user.flags ?? 0);
+    for (const action of violation.actions ?? []) {
+        if (!types.includes(action.action_type)) continue;
+        if (action.action_type === ACTION.GLOBAL_QUARANTINE) flags &= ~UserFlags.FLAGS.QUARANTINED;
+        if (action.action_type === ACTION.USER_SPAMMER) flags &= ~UserFlags.FLAGS.SPAMMER;
+        if (action.previous) Object.assign(changes, action.previous);
+    }
+    if (flags !== BigInt(user.flags ?? 0)) changes.flags = Number(flags);
+    if (Object.keys(changes).length) {
+        await User.update({ id: user.id }, changes);
+        await announceUserChange(user.id).catch((e) => console.error("[Safety] couldn't announce the account change", e));
+    }
+}
+
+// action types that stop counting when the violation expires; resets and message removal wait for an appeal
+const EXPIRING_ACTIONS: number[] = [ACTION.GLOBAL_QUARANTINE, ACTION.USER_SPAMMER, ACTION.BAN, ACTION.REQUIRE_VERIFICATION];
+
+// run every minute: lifts expiring effects that no other active violation still asks for
+export async function liftExpiredEffects() {
+    const now = new Date();
+    const expired = await UserViolation.find({ where: { expires_at: LessThanOrEqual(now) } });
+    for (const violation of expired) {
+        const pending = (violation.actions ?? []).filter((action) => !action.lifted && EXPIRING_ACTIONS.includes(action.action_type));
+        if (!pending.length) continue;
+        const others = (await getUserViolations(violation.user_id)).filter((v) => v.id !== violation.id && isActiveViolation(v, now));
+        const stillAsked = (type: number) => others.some((v) => v.actions?.some((action) => action.action_type === type));
+        const types = [...new Set(pending.map((action) => action.action_type))].filter((type) => !stillAsked(type));
+        if (types.length) await revertTypes(violation, types);
+        for (const action of pending) action.lifted = true;
+        await violation.save();
+        clearEnforcementCaches(violation.user_id);
+    }
+}
+
+export function startViolationSweep() {
+    setInterval(() => liftExpiredEffects().catch((e) => console.error("[Safety] couldn't lift expired effects", e)), 60_000).unref();
+}
+
+// An overturned appeal undoes everything the violation did
+async function revertViolationActions(violation: UserViolation) {
+    await unhideMessages(violation);
+    await revertTypes(
+        violation,
+        (violation.actions ?? []).map((action) => action.action_type),
+    );
+    for (const action of violation.actions ?? []) action.lifted = true;
+    await violation.save();
+    clearEnforcementCaches(violation.user_id);
+}
+
 export async function issueViolation(user_id: string, body: AdminViolationCreateSchema, issued_by: string, flagged_content: unknown[] = []) {
     const before = await currentStanding(user_id);
     const violation = await UserViolation.create({
@@ -241,6 +399,8 @@ export async function issueViolation(user_id: string, body: AdminViolationCreate
         issued_by,
         expires_at: body.expires_in_days ? new Date(Date.now() + body.expires_in_days * 24 * 60 * 60 * 1000) : PERMANENT_VIOLATION_EXPIRY,
     }).save();
+    await applyViolationActions(violation);
+    clearEnforcementCaches(violation.user_id);
     await notifyViolation(violation);
     await notifyStandingDrop(user_id, before, await currentStanding(user_id), violation.id);
     return violation;

@@ -369,6 +369,8 @@ export interface CollectibleSearchOptions {
     offset?: number;
     limit?: number;
     first_party?: boolean; // false lists only collabs
+    colors?: string[]; // COLLECTIBLES_COLOR_*
+    themes?: string[]; // COLLECTIBLES_THEME_*
 }
 
 const SEARCH_TYPES: Record<CollectibleSearchItemType, CollectibleItemType> = {
@@ -391,13 +393,44 @@ const searchText = (product: CollectibleProduct, category: CollectibleCategory) 
         .join(" ")
         .toLowerCase();
 
-type SearchEntry = {
-    product: CollectibleProduct;
-    category: CollectibleCategory;
-    type: CollectibleItemType;
-    text?: string;
-    name?: string;
-    recency?: bigint;
+type SearchEntry = { product: CollectibleProduct; category: CollectibleCategory; type: CollectibleItemType; text?: string; name?: string; recency?: bigint };
+
+// the catalog has no per-item colour, so the shop's colour filter goes by the product's own palette (falling back to its collection's)
+const colorName = (rgb: number) => {
+    const r = (rgb >> 16) & 255,
+        g = (rgb >> 8) & 255,
+        b = rgb & 255;
+    const max = Math.max(r, g, b),
+        min = Math.min(r, g, b),
+        d = max - min;
+    const l = (max + min) / 510;
+    if (l < 0.18) return "BLACK";
+    if (d < 25 || (d / 255 < 0.15 && l > 0.7)) return l > 0.6 ? "WHITE" : "BLACK";
+    let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+    if (h < 15 || h >= 345) return l > 0.65 ? "PINK" : "RED";
+    if (h < 40) return l < 0.4 ? "BROWN" : "ORANGE";
+    if (h < 65) return "YELLOW";
+    if (h < 170) return "GREEN";
+    if (h < 255) return "BLUE";
+    if (h < 300) return "PURPLE";
+    return "PINK";
+};
+type FilterTags = Record<string, { c?: string[]; t?: string[] }>;
+// colours come from the preview art and themes from names (scripts/collectible-colors.mjs); missing file just means no tags
+let filterTags: Promise<FilterTags> | undefined;
+const loadFilterTags = () =>
+    (filterTags ??= fs
+        .readFile(path.join(ASSETS_FOLDER, "collectible-colors.json"), "utf8")
+        .then((raw) => JSON.parse(raw) as FilterTags)
+        .catch(() => ({})));
+
+const entryColors = (entry: SearchEntry, tags: FilterTags) => {
+    const tagged = tags[entry.product.sku_id]?.c;
+    if (tagged?.length) return tagged;
+    const styles = (entry.product.styles ?? entry.category.styles) as { button_colors?: number[]; background_colors?: number[] } | undefined;
+    const rgb = styles?.button_colors?.[0] ?? styles?.background_colors?.[0];
+    return typeof rgb === "number" ? [`COLLECTIBLES_COLOR_${colorName(rgb)}`] : [];
 };
 let searchIndex: { snapshot: Catalog; entries: SearchEntry[]; sorted: Map<string, SearchEntry[]> } | undefined;
 const searchableTypes = new Set(Object.values(SEARCH_TYPES));
@@ -495,6 +528,9 @@ export const Collectibles = {
     /** The shop's search and browse tabs: listed products filtered and sorted, as SKU ids the client looks up in what it loaded. */
     async search(options: CollectibleSearchOptions) {
         const wanted = new Set((options.item_types ?? []).flatMap((type) => (type in SEARCH_TYPES ? [SEARCH_TYPES[type as CollectibleSearchItemType]] : [])));
+        const colors = new Set(options.colors ?? []);
+        const themes = new Set(options.themes ?? []);
+        const tags: FilterTags = colors.size || themes.size ? await loadFilterTags() : {};
         const terms = (options.search ?? "").toLowerCase().split(/\s+/).filter(Boolean);
         const direction = options.sort_direction === "asc" ? 1 : -1;
         const index = getSearchIndex(await Collectibles.get());
@@ -510,6 +546,8 @@ export const Collectibles = {
         const found: { entry: SearchEntry; score: number }[] = [];
         for (const entry of entries) {
             if (wanted.size && !wanted.has(entry.type)) continue;
+            if (colors.size && !entryColors(entry, tags).some((color) => colors.has(color))) continue;
+            if (themes.size && !(tags[entry.product.sku_id]?.t ?? []).some((theme) => themes.has(theme))) continue;
             if (options.first_party === false && entry.product.is_first_party !== false) continue;
             let score = 0;
             if (terms.length) {

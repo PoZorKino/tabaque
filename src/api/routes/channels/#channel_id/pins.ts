@@ -1,3 +1,4 @@
+import { isModerationHidden } from "@spacebar/util";
 import { Request, Response, Router } from "express";
 import { IsNull, Not } from "typeorm";
 import { route } from "@spacebar/api/middlewares";
@@ -205,7 +206,7 @@ router.get(
     async (req: Request, res: Response) => {
         const { channel_id } = req.params as { [key: string]: string };
 
-        const pins = await Message.find({
+        const pinsFound = await Message.find({
             where: { channel_id: channel_id, pinned_at: Not(IsNull()) },
             relations: {
                 author: true,
@@ -224,6 +225,7 @@ router.get(
             },
             order: { pinned_at: "DESC" },
         });
+        const pins = pinsFound.filter((message) => !isModerationHidden(message));
         await Message.fillReplies(pins);
 
         res.send(pins.map((message) => message.toPublicJSON(req.user_id)));

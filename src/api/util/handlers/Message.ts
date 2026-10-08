@@ -1,3 +1,4 @@
+import { assertVerifiedIfRequired } from "../utility/accountStanding";
 import { HTTPError } from "lambert-server/HTTPError";
 import { In, Raw } from "typeorm";
 // noinspection ES6PreferShortImport -- Causes a circular reference...
@@ -467,6 +468,7 @@ export async function handleMessage(
                   relations: { recipients: true },
               });
     if (!channel || !opts.channel_id) throw new HTTPError("Channel not found", 404);
+    if (opts.author_id && !opts.webhook_id && !opts.application_id) await assertVerifiedIfRequired(opts.author_id);
 
     const authorPermission = opts.author_id && !opts.webhook_id && !opts.interaction_metadata ? known.permission : undefined;
     let permission: null | Permissions = null;

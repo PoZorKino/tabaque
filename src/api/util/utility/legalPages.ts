@@ -38,8 +38,12 @@ export const legalPageRouter = (kind: keyof typeof PAGES) => {
                 ? `<p>Questions about how this instance is run can be sent to <a href="mailto:${escapeHtml(correspondenceEmail)}">${escapeHtml(correspondenceEmail)}</a>.</p>`
                 : "";
             const page = await fs.readFile(path.join(PUBLIC_ASSETS_FOLDER, "legal.html"), "utf8");
+            // a document written for this kind of page goes in assets/public/legal/<kind>.html
+            const written = await fs.readFile(path.join(PUBLIC_ASSETS_FOLDER, "legal", `${kind}.html`), "utf8").catch(() => null);
+            const body = written ?? "<p>The operators of __INSTANCE_NAME__ have not published this document yet.</p>";
             res.type("html").send(
                 page
+                    .replace("__BODY__", () => body)
                     .replaceAll("__INSTANCE_NAME__", escapeHtml(instanceName()))
                     .replaceAll("__TITLE__", escapeHtml(title))
                     .replaceAll("__HOME__", escapeHtml(isWebUrl(frontPage) ? frontPage.trim() : "/"))

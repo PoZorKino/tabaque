@@ -115,7 +115,7 @@ router.patch(
                         description: body.avatar_description ?? null,
                     },
                     ...(user.recent_avatars ?? []).filter((x) => x.storage_hash !== avatar),
-                ].slice(0, 10);
+                ].slice(0, Config.get().client.recentAvatarsLimit || undefined);
         }
         if (body.banner !== undefined)
             Object.assign(user, {

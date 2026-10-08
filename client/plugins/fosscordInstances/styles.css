@@ -1,0 +1,218 @@
+/* Instance manager */
+.fi-button-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+.fi-button {
+    width: 48px;
+    height: 48px;
+    border: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    color: var(--interactive-icon-default, var(--interactive-normal, #b5bac1));
+    background: var(--background-base-lower, var(--background-secondary, #2b2d31));
+    transition:
+        border-radius 0.15s,
+        background 0.15s,
+        color 0.15s;
+}
+.fi-button:hover {
+    border-radius: 16px;
+    color: #fff;
+    background: var(--brand-500, #5865f2);
+}
+
+.fi-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.65);
+    font-family: var(--font-primary, "gg sans", sans-serif);
+}
+.fi-card {
+    width: min(560px, 100%);
+    max-height: min(720px, 92vh);
+    overflow: auto;
+    border-radius: 12px;
+    padding: 20px 22px;
+    color: var(--text-default, var(--text-normal, #f2f3f5));
+    background: var(--modal-background, var(--background-base-low, #313338));
+    box-shadow: 0 10px 50px rgba(0, 0, 0, 0.6);
+}
+.fi-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.fi-head h2 {
+    margin: 0 0 2px;
+    font-size: 20px;
+    font-weight: 700;
+}
+.fi-head p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted, #b5bac1);
+}
+.fi-x {
+    border: 0;
+    background: none;
+    color: var(--interactive-icon-default, #b5bac1);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+.fi-x:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.fi-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.fi-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: var(--background-base-lowest, var(--background-secondary, #1e1f22));
+}
+.fi-current {
+    border-color: var(--brand-500, #5865f2);
+}
+.fi-info {
+    flex: 1;
+    min-width: 0;
+}
+.fi-name {
+    font-weight: 600;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.fi-tag {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 999px;
+    color: #fff;
+    background: var(--brand-500, #5865f2);
+}
+.fi-url {
+    font-size: 12px;
+    color: var(--text-muted, #b5bac1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.fi-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.fi-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #80848e;
+}
+.fi-dot-online {
+    background: #23a55a;
+}
+.fi-dot-offline {
+    background: #f23f43;
+}
+.fi-dot-checking {
+    animation: fi-pulse 1s ease-in-out infinite;
+}
+@keyframes fi-pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
+.fi-edit {
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.fi-edit input,
+.fi-add input {
+    flex: 1 1 140px;
+    min-width: 0;
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+    color: var(--text-default, #f2f3f5);
+    background: var(--input-background, var(--background-base-lowest, #1e1f22));
+    outline: 1px solid transparent;
+}
+.fi-edit input:focus {
+    outline-color: var(--brand-500, #5865f2);
+}
+
+.fi-add {
+    margin-top: 18px;
+}
+.fi-add h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #b5bac1);
+}
+.fi-presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.fi-chip {
+    border: 0;
+    border-radius: 999px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-default, #f2f3f5);
+    background: var(--background-modifier-hover, rgba(255, 255, 255, 0.08));
+}
+.fi-chip:hover {
+    background: var(--brand-500, #5865f2);
+    color: #fff;
+}
+.fi-error {
+    margin: 8px 0 0;
+    font-size: 13px;
+    color: #f23f43;
+}
+.fi-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 18px;
+    font-size: 12px;
+    color: var(--text-muted, #b5bac1);
+}

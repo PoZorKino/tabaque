@@ -40,6 +40,7 @@ const pickSettings = () => {
             disabled: register.disabled,
             allowNewRegistration: register.allowNewRegistration,
             requireInvite: register.requireInvite,
+            requireApproval: register.requireApproval,
             guestsRequireInvite: register.guestsRequireInvite,
             requireCaptcha: register.requireCaptcha,
             allowMultipleAccounts: register.allowMultipleAccounts,
