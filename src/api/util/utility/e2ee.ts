@@ -168,6 +168,13 @@ export const verifyEd25519 = (publicKey: string, message: string, signature: str
 
 export const isE2eeChannelType = (type: ChannelType) => type === ChannelType.DM || type === ChannelType.GROUP_DM;
 
+export async function e2eePlainChannelIdsFor(userId: string) {
+    const recipients = await Recipient.find({ where: { user_id: userId }, select: { channel_id: true } });
+    if (!recipients.length) return [];
+    const channels = await Channel.find({ where: { id: In(recipients.map((r) => r.channel_id)), e2ee_disabled_at: Not(IsNull()) }, select: { id: true } });
+    return channels.map((c) => c.id);
+}
+
 export async function e2eeChannelIdsFor(userId: string) {
     const recipients = await Recipient.find({
         where: { user_id: userId },
@@ -176,10 +183,7 @@ export async function e2eeChannelIdsFor(userId: string) {
     if (!recipients.length) return [];
     const channels = await Channel.find({
         where: [
-            {
-                id: In(recipients.map((r) => r.channel_id)),
-                type: In([ChannelType.DM, ChannelType.GROUP_DM]),
-            },
+            { id: In(recipients.map((r) => r.channel_id)), type: In([ChannelType.DM, ChannelType.GROUP_DM]), e2ee_disabled_at: IsNull() },
             { id: In(recipients.map((r) => r.channel_id)), e2ee_enabled_at: Not(IsNull()) },
         ],
         select: { id: true },

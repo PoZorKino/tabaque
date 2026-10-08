@@ -6,7 +6,7 @@ import { ILike, MoreThan } from "typeorm";
 import { checkRegistrationCaptcha, registrationCapEndpoint } from "@spacebar/api/util";
 import { isPrideBadgeSelection } from "@spacebar/api/util/utility/prideBadgeSelection";
 import { route } from "@spacebar/api/middlewares";
-import { Invite, User, ValidRegistrationToken } from "@spacebar/database";
+import { Invite, RegistrationRequest, User, ValidRegistrationToken } from "@spacebar/database";
 import { Config, FieldErrors, generateToken, IpDataClient, AbuseIpDbClient } from "@spacebar/util";
 import { RegisterSchema } from "@spacebar/schemas";
 import { BcryptWorkerPool } from "@spacebar/util/util/workers/bcrypt/BcryptWorkerPool";
@@ -351,6 +351,26 @@ router.post(
         if (register.requireCaptcha && registrationCapEndpoint() === "/api/v9/auth/cap/") {
             const claimed = await checkRegistrationCaptcha(body.captcha_key);
             if (claimed) return res.status(400).json(claimed);
+        }
+
+        if (register.requireApproval && !regTokenUsed) {
+            if (await RegistrationRequest.exists({ where: { username: ILike(body.username.replace(/[\\%_]/g, "\\$&")), status: "pending" } }))
+                throw FieldErrors({ username: { code: "USERNAME_ALREADY_TAKEN", message: "A request with this username is already waiting for approval." } });
+            await RegistrationRequest.insert({
+                id: crypto.randomUUID(),
+                username: body.username,
+                email: body.email ?? null,
+                password: body.password ?? null,
+                date_of_birth: body.date_of_birth ? String(body.date_of_birth) : null,
+                invite: body.invite ?? null,
+                ip,
+                status: "pending",
+                created_at: new Date(),
+            });
+            console.log(`[Register] request from ${ip} for ${body.username} is waiting for approval`);
+            throw FieldErrors({
+                username: { code: "REGISTRATION_PENDING", message: "Your request was sent. An admin has to approve it before you can log in - try again later." },
+            });
         }
 
         const user = await User.register({ ...body, username: body.username, req });

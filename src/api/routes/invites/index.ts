@@ -1,3 +1,4 @@
+import { assertNotLimitedAccess } from "@spacebar/api/util/utility/accountStanding";
 import { route } from "@spacebar/api/middlewares";
 import { APPLICATION_BYPASS_INVITE_FLAG, isApplyGuild, onGuildMemberJoin, startJoinRequest } from "@spacebar/api/util";
 import { AuditLog, Ban, Channel, Guild, GuildScheduledEvent, Invite, Member, PublicInviteRelation, Recipient, ScheduledEvents, User } from "@spacebar/database";
@@ -121,6 +122,7 @@ router.post(
         },
     }),
     async (req: Request, res: Response) => {
+        await assertNotLimitedAccess(req.user_id, "join servers");
         if (req.user_bot && !Config.get().user.botsCanUseInvites) throw DiscordApiErrors.BOT_PROHIBITED_ENDPOINT;
 
         const { invite_code } = req.params as { [key: string]: string };

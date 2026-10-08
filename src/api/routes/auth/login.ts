@@ -4,6 +4,7 @@ import { loginMfaResponse, checkCaptcha } from "@spacebar/api/util";
 import { route } from "@spacebar/api/middlewares";
 import { User } from "@spacebar/database";
 import { Config, FieldErrors, generateToken } from "@spacebar/util";
+import { hasActiveTempBan } from "../../util/utility/accountStanding";
 import { AccountStandingState, LoginSchema } from "@spacebar/schemas";
 
 const router: Router = Router({ mergeParams: true });
@@ -91,6 +92,11 @@ router.post(
         if (user.account_standing === AccountStandingState.SUSPENDED || (!undelete && user.disabled))
             return res.status(400).json({
                 message: req.t("auth:login.ACCOUNT_DISABLED"),
+                code: 20013,
+            });
+        if (await hasActiveTempBan(user.id))
+            return res.status(400).json({
+                message: "This account is temporarily banned.",
                 code: 20013,
             });
 

@@ -34,4 +34,5 @@ export * from "./Presence";
 export * from "./MediaProxy";
 export * from "./VideoFrame";
 export * from "./ApexExperiments";
+export * from "./WidgetUploads";
 export * from "./VoiceHealth";

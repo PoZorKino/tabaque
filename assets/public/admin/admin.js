@@ -578,6 +578,9 @@ const TABS = {
   users: renderUsers,
   badges: renderBadges,
   experiments: renderExperiments,
+  help: renderHelp,
+  changelog: renderChangelog,
+  audit: renderAudit,
   games: renderGames,
   store: renderStore,
   announcements: renderAnnouncements,
@@ -1099,6 +1102,8 @@ async function renderSettings(view) {
                         ${toggle("register.disabled", "Disable registration entirely", "Nobody can create an account, including with an invite.")}
                         ${toggle("register.allowNewRegistration", "Allow new registrations", "Turn off to stop new sign-ups while keeping invite-based registration rules.")}
                         ${toggle("register.requireInvite", "Require an invite to register", "New accounts must join through an invite link.")}
+                        ${toggle("register.requireApproval", "Require admin approval", "New sign-ups wait until an admin accepts them. No account exists before that.")}
+                        <p class="muted" style="margin:0 0 0 30px"><a href="/api/v9/admin/registrations/panel" target="_blank" rel="noopener">Review signup requests</a></p>
                         ${toggle("register.guestsRequireInvite", "Require an invite for guest accounts", "Guest accounts are created without a password.")}
                         ${toggle("register.email.required", "Require an email address", "Off lets people sign up with only a username and password.")}
                         ${toggle("register.allowMultipleAccounts", "Allow multiple accounts per person", "When off, sign-ups from known devices or IPs are refused.")}
@@ -2654,6 +2659,13 @@ function openReport(r, reload) {
               r.status === "open" && r.reported_user && access.users
                 ? html`<form id="report-violation" class="card stack">
                           <h3>Issue a violation</h3>
+                          <div class="row" style="gap:8px;flex-wrap:wrap">
+                              <span class="muted">Presets</span>
+                              <button class="btn small" type="button" data-preset="4" data-days="90">Warn</button>
+                              <button class="btn small" type="button" data-preset="4,13" data-days="90">Warn and hide the message</button>
+                              <button class="btn small" type="button" data-preset="4,2" data-days="7">Quarantine for 7 days</button>
+                              <button class="btn small" type="button" data-preset="1" data-days="7">Temporary ban for 7 days</button>
+                          </div>
                           <label
                               >Type<select name="classification_type">
                                   ${options(VIOLATION_TYPES, guessViolationType(r.reason))}
@@ -3716,6 +3728,580 @@ function openGrant(catalog, refresh) {
       refresh();
     }
   });
+}
+
+/* ---------- audit log ---------- */
+
+async function renderAudit(view) {
+    let entries = [];
+    let users = {};
+    let next = null;
+    const filters = { area: "", actor: "" };
+
+    const load = async (more) => {
+        const query = new URLSearchParams({ limit: "50" });
+        if (filters.area) query.set("area", filters.area);
+        if (filters.actor) query.set("actor", filters.actor);
+        if (more && next) query.set("before", next);
+        const result = await api(`/admin/audit-log?${query}`);
+        entries = more ? entries.concat(result.entries) : result.entries;
+        users = { ...users, ...result.users };
+        next = result.next;
+        draw();
+    };
+
+    const who = (id) => (id ? escapeHtml(users[id] ?? id) : "");
+
+    const draw = () => {
+        const rows = entries
+            .map(
+                (e) => `<tr>
+                    <td>${escapeHtml(new Date(e.created_at).toLocaleString())}</td>
+                    <td>${who(e.actor_id)}</td>
+                    <td><code>${escapeHtml(e.method)} ${escapeHtml(e.path)}</code></td>
+                    <td>${who(e.target_id)}</td>
+                    <td><button class="btn small" data-audit="${e.id}" type="button">Details</button></td>
+                </tr>`,
+            )
+            .join("");
+        view.innerHTML = `
+            <div class="section-head"><h2>Audit log</h2></div>
+            <p class="muted">Every change made through the admin dashboard, newest first. Passwords, tokens and other secrets are never stored.</p>
+            <form id="audit-filter" class="row" style="gap:8px;margin-bottom:16px">
+                <input name="area" placeholder="Area, like users or help" value="${escapeHtml(filters.area)}" />
+                <input name="actor" placeholder="Admin user ID" value="${escapeHtml(filters.actor)}" />
+                <button class="btn" type="submit">Filter</button>
+            </form>
+            ${entries.length ? `<div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>About</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="card empty">Nothing recorded yet.</div>'}
+            ${next ? '<button class="btn" id="audit-more" type="button" style="margin-top:12px">Show more</button>' : ""}`;
+
+        $("#audit-filter", view).addEventListener("submit", (e) => {
+            e.preventDefault();
+            filters.area = e.currentTarget.area.value.trim();
+            filters.actor = e.currentTarget.actor.value.trim();
+            load(false);
+        });
+        $("#audit-more", view)?.addEventListener("click", () => load(true));
+        for (const btn of $$("[data-audit]", view)) {
+            btn.addEventListener("click", () => {
+                const entry = entries.find((e) => e.id === btn.dataset.audit);
+                openDrawer(
+                    "Audit entry",
+                    raw(`<p class="muted">${escapeHtml(new Date(entry.created_at).toLocaleString())} · ${who(entry.actor_id)} · status ${entry.status}</p>
+                     <p><code>${escapeHtml(entry.method)} ${escapeHtml(entry.path)}</code></p>
+                     <pre style="white-space:pre-wrap;word-break:break-word">${escapeHtml(JSON.stringify(entry.body, null, 2) ?? "No request body")}</pre>`),
+                );
+            });
+        }
+    };
+
+    await load(false);
+}
+
+/* ---------- what's new ---------- */
+
+const CHANGELOG_TEMPLATE = "What's new\n==========\n\nWrite what changed here.";
+
+async function renderChangelog(view) {
+    const entries = await api("/admin/changelogs");
+    const titleOf = (e) => (e.content.split("\n").find((line) => line.trim()) ?? "").trim();
+    const rows = entries
+        .map(
+            (e) => `<tr>
+                <td>${escapeHtml(e.date)}</td>
+                <td><strong>${escapeHtml(titleOf(e))}</strong></td>
+                <td><span class="muted">${e.published ? (e.show_on_startup ? "Pops up on startup" : "Only in settings") : "Draft"}</span></td>
+                <td><button class="btn small" data-cl-edit="${e.id}" type="button">Edit</button> <button class="btn small danger" data-cl-delete="${e.id}" type="button">Delete</button></td>
+            </tr>`,
+        )
+        .join("");
+    view.innerHTML = `
+        <div class="section-head">
+            <h2>What's new</h2>
+            <button class="btn primary" id="cl-new" type="button">New entry</button>
+        </div>
+        <p class="muted">What people see in the What's new window. The newest published entry pops up once for everyone who hasn't seen it, and older ones stay in settings.</p>
+        ${entries.length ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Title</th><th>Shown</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="card empty">No entries yet.</div>'}`;
+
+    const editor = (entry) => {
+        const type = entry?.asset ? String(entry.asset_type ?? 1) : "";
+        const body = openDrawer(
+            entry ? "Edit entry" : "New entry",
+            raw(`<form id="cl-form" class="stack">
+                <label>Date<input name="date" type="date" required value="${escapeHtml(entry?.date ?? new Date().toISOString().slice(0, 10))}" /></label>
+                <label>Text<span class="hint">The first line is the title, underlined with ====. Markdown works below it.</span><textarea name="content" rows="14" required>${escapeHtml(entry?.content ?? CHANGELOG_TEMPLATE)}</textarea></label>
+                <label>Picture or video<select name="asset_type">
+                    <option value="" ${type === "" ? "selected" : ""}>None</option>
+                    <option value="1" ${type === "1" ? "selected" : ""}>Image link</option>
+                    <option value="0" ${type === "0" ? "selected" : ""}>YouTube video id</option>
+                </select></label>
+                <label><span class="hint">An https image link, or the id from a YouTube address.</span><input name="asset" value="${escapeHtml(entry?.asset ?? "")}" /></label>
+                <label class="toggle"><input type="checkbox" name="show_on_startup" ${entry?.show_on_startup === false ? "" : "checked"} /><span>Pop up when people open the app</span></label>
+                <label class="toggle"><input type="checkbox" name="published" ${entry?.published === false ? "" : "checked"} /><span>Published<span class="hint">Untick to keep it as a draft nobody sees.</span></span></label>
+                <div class="form-actions"><button class="btn primary" type="submit">Save entry</button></div>
+            </form>`),
+        );
+        if (!body) return;
+        $("#cl-form", body).addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const payload = {
+                date: form.date.value,
+                content: form.content.value,
+                asset: form.asset_type.value ? form.asset.value.trim() : "",
+                asset_type: form.asset_type.value ? Number(form.asset_type.value) : null,
+                show_on_startup: form.show_on_startup.checked,
+                published: form.published.checked,
+            };
+            const path = entry ? `/admin/changelogs/${encodeURIComponent(entry.id)}` : "/admin/changelogs";
+            const done = await act($("button[type=submit]", form), () => api(path, { method: entry ? "PATCH" : "POST", body: payload }), "Entry saved");
+            if (done) {
+                closeDrawer();
+                renderChangelog(view);
+            }
+        });
+    };
+
+    $("#cl-new", view).addEventListener("click", () => editor(null));
+    for (const btn of $$("[data-cl-edit]", view)) btn.addEventListener("click", () => editor(entries.find((e) => e.id === btn.dataset.clEdit)));
+    for (const btn of $$("[data-cl-delete]", view)) {
+        btn.addEventListener("click", async () => {
+            if (!confirm("Delete this entry? It disappears from What's new right away.")) return;
+            const done = await act(btn, () => api(`/admin/changelogs/${encodeURIComponent(btn.dataset.clDelete)}`, { method: "DELETE" }), "Entry deleted");
+            if (done) renderChangelog(view);
+        });
+    }
+}
+
+/* ---------- help center ---------- */
+
+async function renderHelp(view) {
+    const articles = await api("/admin/help");
+    const rows = articles
+        .map(
+            (a) => `<tr>
+                <td><strong>${escapeHtml(a.title)}</strong></td>
+                
+                <td>${a.body.length.toLocaleString()} chars</td>
+                <td><a href="/hc/articles/${encodeURIComponent(a.id)}" target="_blank">View</a></td>
+                <td><button class="btn small" data-help-edit="${a.id}" type="button">Edit</button> <button class="btn small danger" data-help-delete="${a.id}" type="button">Delete</button></td>
+            </tr>`,
+        )
+        .join("");
+    view.innerHTML = `
+        <div class="section-head">
+            <h2>Help center</h2>
+            <div class="row" style="gap:8px">
+                <button class="btn primary" id="help-new" type="button">New article</button>
+            </div>
+        </div>
+        <p class="muted">Public at <a href="/hc" target="_blank">/hc</a>. Articles are written here and shown as-is.</p>
+        ${articles.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Size</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="card empty">No articles yet.</div>'}`;
+
+    const editor = (article) => {
+        const body = openDrawer(article ? "Edit article" : "New article", `
+            <form id="help-form" class="stack">
+                <label>Title<input name="title" required value="${escapeHtml(article?.title ?? "")}" /></label>
+                <label>Body (HTML)<span class="hint">Shown as-is on /hc. Use links like /hc/articles/&lt;id&gt; between articles.</span><textarea name="body" rows="18">${escapeHtml(article?.body ?? "")}</textarea></label>
+                <div class="form-actions"><button class="btn primary" type="submit">Save article</button></div>
+            </form>`);
+        if (!body) return;
+        $("#help-form", body).addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const payload = { title: form.title.value, body: form.body.value };
+            const path = article ? `/admin/help/${encodeURIComponent(article.id)}` : "/admin/help";
+            const done = await act($("button[type=submit]", form), () => api(path, { method: article ? "PATCH" : "POST", body: payload }), "Article saved");
+            if (done) {
+                closeDrawer();
+                renderHelp(view);
+            }
+        });
+    };
+
+    $("#help-new", view).addEventListener("click", () => editor(null));
+    for (const btn of $$("[data-help-edit]", view)) {
+        btn.addEventListener("click", async () => editor(await api(`/admin/help`).then((list) => list.find((a) => a.id === btn.dataset.helpEdit))));
+    }
+    for (const btn of $$("[data-help-delete]", view)) {
+        btn.addEventListener("click", async () => {
+            if (!confirm("Delete this article? It disappears from /hc right away.")) return;
+            const done = await act(btn, () => api(`/admin/help/${encodeURIComponent(btn.dataset.helpDelete)}`, { method: "DELETE" }), "Article deleted");
+            if (done) renderHelp(view);
+        });
+    }
+}
+
+/* ---------- experiments ---------- */
+
+async function renderExperiments(view) {
+    const [data, catalog] = await Promise.all([api("/admin/experiments"), api("/admin/experiments/catalog")]);
+    const whoOf = async (kind, id) => {
+        try {
+            const r = await api(`/admin/${kind === "user" ? "users" : "guilds"}/${id}`);
+            return kind === "user" ? userName(r.user ?? r) : r.name || id;
+        } catch {
+            return id;
+        }
+    };
+    const rolloutRows = Object.entries(data.rollouts ?? {});
+    const stat = (label, value) => html`<div class="card stat"><div class="muted">${label}</div><div class="value">${value}</div></div>`;
+    const rows = [
+        ...Object.entries(data.global).map(([name, variant]) => ({ kind: "global", id: "", name, variant })),
+        ...Object.entries(data.users).flatMap(([id, g]) => Object.entries(g).map(([name, variant]) => ({ kind: "user", id, name, variant }))),
+        ...Object.entries(data.guilds).flatMap(([id, g]) => Object.entries(g).map(([name, variant]) => ({ kind: "guild", id, name, variant }))),
+    ];
+    mount(
+        view,
+        html`
+            <div class="page-head">
+                <div>
+                    <h1>Experiments</h1>
+                    <p class="muted">Turn Discord client features on for some of your users. People get changes after reloading the app.</p>
+                </div>
+                <div class="row" style="gap:8px">
+                    <button class="btn" id="new-rollout" type="button">Roll out to a percentage</button>
+                    <button class="btn primary" id="new-grant" type="button">Grant experiments</button>
+                </div>
+            </div>
+            <div class="stats" style="margin-bottom:24px">
+                ${stat("Active rollouts", fmtNumber(rolloutRows.length))} ${stat("Direct grants", fmtNumber(rows.length))} ${stat("Experiments in the client", fmtNumber(catalog.length))}
+            </div>
+            <div class="section-head">
+                <h2>Gradual rollouts</h2>
+                <p class="muted">A share of all users gets the experiment. Raising the share only adds people, nobody who already has it loses it.</p>
+            </div>
+            ${rolloutRows.length
+                ? html`<div class="rollouts">
+                      ${rolloutRows.map(([name, r]) => {
+                          const reach = Math.round(((data.users_total ?? 0) * r.percent) / 100);
+                          return html`<div class="card rollout">
+                              <div class="rollout-name mono">${name}</div>
+                              <div class="rollout-top">
+                                  <div class="rollout-pct">${r.percent}%</div>
+                                  <span class="badge info">Variant ${r.variant}</span>
+                              </div>
+                              <div class="rollout-bar"><span style="width:${r.percent}%"></span></div>
+                              <div class="rollout-foot">
+                                  <span class="muted">About ${fmtNumber(reach)} of ${fmtNumber(data.users_total ?? 0)} users</span>
+                                  <span class="row rollout-actions">
+                                      <button class="btn small" data-roll-users="${name}" type="button">Who got it</button>
+                                      <button class="btn small" data-roll-edit="${name}" type="button">Change</button>
+                                      <button class="btn small danger" data-roll-stop="${name}" type="button">Stop</button>
+                                  </span>
+                              </div>
+                          </div>`;
+                      })}
+                  </div>`
+                : html`<div class="card empty">
+                      <p>No rollouts yet.</p>
+                      <button class="btn primary" data-roll-new type="button">Roll out an experiment</button>
+                  </div>`}
+            <div class="section-head" style="margin-top:32px">
+                <h2>Direct grants</h2>
+                <p class="muted">Experiments turned on for everyone, for one person, or for one server.</p>
+            </div>
+            ${rows.length
+                ? html`<div class="table-wrap">
+                      <table>
+                          <thead>
+                              <tr>
+                                  <th>Experiment</th>
+                                  <th>Given to</th>
+                                  <th>Variant</th>
+                                  <th></th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              ${rows.map(
+                                  (r, i) =>
+                                      html`<tr data-i="${i}">
+                                          <td><strong>${r.name}</strong></td>
+                                          <td>
+                                              ${r.kind === "global"
+                                                  ? html`<span class="badge accent">Everyone</span>`
+                                                  : html`<span class="badge info">${r.kind === "user" ? "User" : "Server"}</span> <span class="who muted" data-kind="${r.kind}" data-id="${r.id}">${r.id}</span>`}
+                                          </td>
+                                          <td>${r.variant}</td>
+                                          <td><button class="btn small danger" data-revoke="${i}" type="button">Revoke</button></td>
+                                      </tr>`,
+                              )}
+                          </tbody>
+                      </table>
+                  </div>`
+                : html`<div class="card empty">Nothing granted yet. Experiments in the built-in defaults still apply.</div>`}
+        `,
+    );
+    const refresh = () => renderExperiments(view);
+    for (const el of $$(".who", view)) whoOf(el.dataset.kind, el.dataset.id).then((n) => (el.textContent = `${n} (${el.dataset.id})`));
+    for (const btn of $$("[data-revoke]", view))
+        btn.addEventListener("click", async () => {
+            const r = rows[btn.dataset.revoke];
+            const done = await act(btn, () => api("/admin/experiments", { method: "PUT", body: { target: r.kind, id: r.id || undefined, name: r.name, variant: 0 } }), "Revoked");
+            if (done) refresh();
+        });
+    $("#new-grant").addEventListener("click", () => openGrant(catalog, refresh));
+    $("#new-rollout").addEventListener("click", () => openRollout(catalog, refresh, undefined, undefined, data.users_total));
+    $("[data-roll-new]", view)?.addEventListener("click", () => openRollout(catalog, refresh, undefined, undefined, data.users_total));
+    for (const btn of $$("[data-roll-users]", view)) btn.addEventListener("click", () => openRolloutUsers(btn.dataset.rollUsers));
+    for (const btn of $$("[data-roll-edit]", view)) btn.addEventListener("click", () => openRollout(catalog, refresh, btn.dataset.rollEdit, data.rollouts[btn.dataset.rollEdit], data.users_total));
+    for (const btn of $$("[data-roll-stop]", view))
+        btn.addEventListener("click", async () => {
+            const done = await act(btn, () => api("/admin/experiments/rollout", { method: "PUT", body: { name: btn.dataset.rollStop, percent: 0 } }), "Rollout stopped");
+            if (done) refresh();
+        });
+}
+
+function openRollout(catalog, refresh, presetName, preset, usersTotal = 0) {
+    let name = presetName ?? "";
+    const body = openDrawer(
+        presetName ? "Change rollout" : "Roll out to a percentage",
+        html`
+            <form id="rollout-form" class="stack">
+                ${presetName
+                    ? html`<div class="card"><div class="muted">Experiment</div><div class="mono" style="margin-top:4px">${presetName}</div></div>`
+                    : html`<div class="stack" style="gap:8px">
+                          <label>Experiment<input name="search" autocomplete="off" placeholder="Search, or type a full name" /></label>
+                          <div class="picker" id="rollout-picker" role="listbox"></div>
+                      </div>`}
+                <div class="stack" style="gap:8px">
+                    <label>Share of users</label>
+                    <div class="pct-row">
+                        <input name="slider" type="range" min="0" max="100" step="0.1" aria-label="Share of users" />
+                        <input name="percent" type="number" min="0" max="100" step="0.01" aria-label="Percent" />
+                        <span>%</span>
+                    </div>
+                    <div class="pct-presets">${[0.1, 1, 5, 10, 25, 50, 100].map((v) => html`<button type="button" class="btn small" data-pct="${v}">${v}%</button>`)}</div>
+                    <p class="hint" id="rollout-estimate"></p>
+                </div>
+                <label>Variant<span class="hint">1 is on for most. Some experiments have more.</span><input name="variant" type="number" min="1" max="1000" value="${preset?.variant ?? 1}" /></label>
+                <div class="form-actions"><button class="btn primary" type="submit">${presetName ? "Save" : "Start rollout"}</button></div>
+            </form>
+        `,
+    );
+    if (!body) return;
+    const form = $("#rollout-form", body);
+
+    // the slider runs on a square scale so 0.3% is as easy to hit as 30%
+    const setPercent = (value, from) => {
+        const pct = Math.min(100, Math.max(0, Math.round(Number(value) * 100) / 100 || 0));
+        if (from !== "number") form.percent.value = pct;
+        if (from !== "slider") form.slider.value = Math.sqrt(pct * 100);
+        const reach = Math.round((usersTotal * pct) / 100);
+        $("#rollout-estimate").textContent = usersTotal ? `About ${fmtNumber(reach)} of ${fmtNumber(usersTotal)} users.` : "";
+    };
+    form.slider.addEventListener("input", () => {
+        form.percent.value = Math.round(((Number(form.slider.value) ** 2) / 100) * 100) / 100;
+        setPercent(form.percent.value, "slider");
+    });
+    form.percent.addEventListener("input", () => setPercent(form.percent.value, "number"));
+    for (const b of $$("[data-pct]", body)) b.addEventListener("click", () => setPercent(b.dataset.pct));
+    setPercent(preset?.percent ?? 1);
+
+    if (!presetName) {
+        const picker = $("#rollout-picker", body);
+        const list = () => {
+            const q = form.search.value.trim().toLowerCase();
+            const shown = catalog.filter((n) => n.includes(q)).slice(0, 80);
+            if (q && /^[\w.-]{3,128}$/.test(q) && !catalog.includes(q)) shown.unshift(q);
+            mount(picker, shown.length ? html`${shown.map((n) => html`<button type="button" class="mono" role="option" data-name="${n}" aria-pressed="${n === name}">${n}</button>`)}` : html`<p class="muted" style="padding:12px">No match.</p>`);
+            for (const b of $$("[data-name]", picker))
+                b.addEventListener("click", () => {
+                    name = b.dataset.name;
+                    list();
+                });
+        };
+        form.search.addEventListener("input", list);
+        list();
+    }
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (!name) return toast("Pick an experiment.", "error");
+        const done = await act(
+            $("button[type=submit]", form),
+            () => api("/admin/experiments/rollout", { method: "PUT", body: { name, percent: Number(form.percent.value), variant: Number(form.variant.value) || 1 } }),
+            "Rollout saved",
+        );
+        if (done) {
+            closeDrawer();
+            refresh();
+        }
+    });
+}
+
+async function openRolloutUsers(name) {
+    const body = openDrawer(`Who got it`, html`<p class="muted">Loading…</p>`);
+    if (!body) return;
+    const shown = [];
+    let filter = "";
+    let total = 0;
+    const draw = (r) => {
+        const q = filter.toLowerCase();
+        const rows = shown.filter((u) => !q || `${userName(u)} ${u.username} ${u.id}`.toLowerCase().includes(q));
+        mount(
+            body,
+            html`
+                <div class="card">
+                    <div class="mono" style="word-break:break-all">${name}</div>
+                    <div class="muted" style="margin-top:4px">${fmtNumber(total)} ${total === 1 ? "user" : "users"} at ${r.percent}%, variant ${r.variant}</div>
+                </div>
+                ${shown.length > 8 ? html`<input id="who-filter" placeholder="Filter by name or id" value="${filter}" autocomplete="off" />` : ""}
+                ${rows.length
+                    ? html`<div>
+                          ${rows.map(
+                              (u) => html`<div class="list-item">
+                                  ${avatar(u)}
+                                  <div class="grow"><strong>${userName(u)}</strong><div class="muted">${userTag(u)}</div></div>
+                                  <span class="mono muted">${u.id}</span>
+                              </div>`,
+                          )}
+                      </div>`
+                    : html`<div class="card empty">${shown.length ? "No match." : "Nobody has it yet."}</div>`}
+                ${shown.length < total ? html`<button class="btn" id="more-users" type="button">Show more</button>` : ""}
+            `,
+        );
+        const input = $("#who-filter", body);
+        input?.addEventListener("input", () => {
+            filter = input.value;
+            draw(r);
+            const again = $("#who-filter", body);
+            again.focus();
+            again.setSelectionRange(filter.length, filter.length);
+        });
+        $("#more-users", body)?.addEventListener("click", load);
+    };
+    const load = async () => {
+        const r = await api(`/admin/experiments/rollout/${encodeURIComponent(name)}/users?${new URLSearchParams({ limit: 200, offset: shown.length })}`).catch((e) => ({ error: e }));
+        if (r.error) return mount(body, html`<p class="err">Couldn't load the list.</p>`);
+        shown.push(...r.users);
+        total = r.total;
+        draw(r);
+    };
+    load();
+}
+
+function openGrant(catalog, refresh) {
+    const picked = new Set();
+    let target = { kind: "user", id: "@me", label: "Me" };
+    const body = openDrawer(
+        "Grant experiments",
+        html`
+            <form id="grant-form" class="stack">
+                <label
+                    >Give to
+                    <select name="kind">
+                        <option value="user">A user</option>
+                        <option value="guild">A server</option>
+                        <option value="global">Everyone</option>
+                    </select></label
+                >
+                <div id="target-box" class="stack">
+                    <label
+                        >Find <span id="target-noun">user</span><span class="hint">Search by name, or leave it on yourself.</span
+                        ><input name="search" autocomplete="off" placeholder="Search…" /></label
+                    >
+                    <div id="target-results" class="stack"></div>
+                    <div class="card row" style="gap:12px"><strong>Selected:</strong> <span id="target-label"></span> <button class="btn small ghost" id="target-me" type="button">Me</button></div>
+                    <label class="row" style="gap:8px" id="owned-row"><input name="owned" type="checkbox" checked /> Also give it to every server they own</label>
+                </div>
+                <label>Variant<span class="hint">1 is on for most. Some experiments have more.</span><input name="variant" type="number" min="1" max="1000" value="1" /></label>
+                <label>Experiments<input name="filter" autocomplete="off" placeholder="Filter, for example profile" /></label>
+                <div class="row" style="gap:8px"><span id="picked-count" class="muted"></span><button class="btn small ghost" id="picked-clear" type="button" style="margin-left:auto">Clear</button></div>
+                <div id="exp-list" style="max-height:320px;overflow:auto" class="stack"></div>
+                <div class="form-actions"><button class="btn primary" type="submit">Grant</button></div>
+            </form>
+        `,
+    );
+    if (!body) return;
+    const form = $("#grant-form", body);
+    const label = () => {
+        $("#target-label").textContent = target.label;
+        $("#picked-count").textContent = `${picked.size} selected`;
+        $("#target-box").hidden = form.kind.value === "global";
+        $("#target-noun").textContent = form.kind.value === "user" ? "user" : "server";
+        $("#owned-row").hidden = form.kind.value !== "user";
+    };
+    const list = () => {
+        const q = form.filter.value.toLowerCase();
+        const shown = catalog.filter((n) => n.includes(q) || picked.has(n)).slice(0, 200);
+        mount(
+            $("#exp-list"),
+            shown.length
+                ? html`${shown.map((n) => html`<label class="row" style="gap:8px"><input type="checkbox" data-name="${n}" ${picked.has(n) ? "checked" : ""} /> ${n}</label>`)}`
+                : html`<p class="muted">No match. You can type a name exactly and press Enter.</p>`,
+        );
+        for (const c of $$("[data-name]", body))
+            c.addEventListener("change", () => {
+                if (c.checked) picked.add(c.dataset.name);
+                else picked.delete(c.dataset.name);
+                label();
+            });
+    };
+    form.filter.addEventListener("input", list);
+    form.filter.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && /^[\w.-]{3,128}$/.test(form.filter.value)) {
+            e.preventDefault();
+            picked.add(form.filter.value);
+            label();
+            list();
+        }
+    });
+    $("#picked-clear").addEventListener("click", () => {
+        picked.clear();
+        label();
+        list();
+    });
+    const search = debounce(async () => {
+        const q = form.search.value.trim();
+        const kind = form.kind.value;
+        if (!q) return mount($("#target-results"), html``);
+        const res = await api(`/admin/${kind === "user" ? "users" : "guilds"}?${new URLSearchParams({ q, limit: 6 })}`).catch(() => ({}));
+        const found = kind === "user" ? (res.users ?? []) : (res.guilds ?? []);
+        const nameOf = (f) => (kind === "user" ? userName(f) : f.name);
+        mount($("#target-results"), html`${found.map((f) => html`<button type="button" class="btn ghost" data-pick="${f.id}" data-label="${nameOf(f)}">${nameOf(f)} <span class="muted">${f.id}</span></button>`)}`);
+        for (const b of $$("[data-pick]", body))
+            b.addEventListener("click", () => {
+                target = { kind, id: b.dataset.pick, label: `${b.dataset.label} (${b.dataset.pick})` };
+                label();
+            });
+    });
+    form.search.addEventListener("input", search);
+    form.kind.addEventListener("change", () => {
+        target = form.kind.value === "user" ? { kind: "user", id: "@me", label: "Me" } : { kind: form.kind.value, id: "", label: "Search for a server" };
+        form.search.value = "";
+        mount($("#target-results"), html``);
+        label();
+    });
+    $("#target-me").addEventListener("click", () => {
+        form.kind.value = "user";
+        target = { kind: "user", id: "@me", label: "Me" };
+        label();
+    });
+    label();
+    list();
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const kind = form.kind.value;
+        if (!picked.size) return toast("Pick at least one experiment.", "error");
+        if (kind !== "global" && !target.id) return toast("Choose who to give it to.", "error");
+        const done = await act(
+            $("button[type=submit]", form),
+            async () => {
+                for (const name of picked)
+                    await api("/admin/experiments", {
+                        method: "PUT",
+                        body: { target: kind, id: kind === "global" ? undefined : target.id, name, variant: Number(form.variant.value) || 1, include_owned_guilds: kind === "user" && form.owned.checked },
+                    });
+                return true;
+            },
+            `Granted ${picked.size} ${picked.size === 1 ? "experiment" : "experiments"}`,
+        );
+        if (done) {
+            closeDrawer();
+            refresh();
+        }
+    });
 }
 
 /* ---------- games ---------- */

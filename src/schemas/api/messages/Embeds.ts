@@ -40,6 +40,9 @@ export enum EmbedType {
     poll_result = "poll_result",
     auto_moderation_message = "auto_moderation_message",
     auto_moderation_notification = "auto_moderation_notification",
+    // the client draws its own safety cards for these, and only when the message has one embed
+    safety_policy_notice = "safety_policy_notice",
+    safety_system_notification = "safety_system_notification",
 }
 
 export interface EmbedImage {

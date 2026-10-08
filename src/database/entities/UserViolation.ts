@@ -5,6 +5,10 @@ import { User } from "./User";
 export interface UserViolationAction {
     action_type: number; // ClassificationActionType
     descriptions: string[];
+    // what the account looked like before a reset, so an overturned appeal can put it back
+    previous?: Record<string, unknown>;
+    // set once an expiring effect has been lifted, or an overturned appeal has undone everything
+    lifted?: boolean;
 }
 
 // a staff-issued violation, shown on the user's account standing page (discord calls these classifications)

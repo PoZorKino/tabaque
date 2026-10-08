@@ -1,4 +1,5 @@
 import { scheduleSavedPoll } from "@spacebar/api/util";
+import { isModerationHidden } from "@spacebar/util";
 import { Request, Response, Router } from "express";
 import { HTTPError } from "lambert-server/HTTPError";
 import multer from "multer";
@@ -307,6 +308,8 @@ router.get(
                 thread: { recipients: { user: true } },
             },
         });
+
+        if (isModerationHidden(message)) throw new HTTPError("Unknown Message", 404);
 
         const permissions = await getPermission(req.user_id, undefined, channel_id);
 

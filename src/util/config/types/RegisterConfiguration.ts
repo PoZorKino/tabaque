@@ -7,6 +7,8 @@ export class RegisterConfiguration {
     disabled: boolean = false;
     requireCaptcha: boolean = true;
     requireInvite: boolean = false;
+    // new signups wait for an operator to approve them (no account, no token until then)
+    requireApproval: boolean = false;
     guestsRequireInvite: boolean = true;
     allowNewRegistration: boolean = true;
     allowMultipleAccounts: boolean = true;

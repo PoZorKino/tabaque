@@ -23,5 +23,9 @@ export class MessageFlags extends BitField {
         HAS_SNAPSHOT: 1n << 14n,
         IS_COMPONENTS_V2: 1n << 15n,
         SENT_BY_SOCIAL_LAYER_INTEGRATION: 1n << 16n,
+        // set by a violation that removed the message; hidden from reads until the violation is overturned
+        MODERATION_HIDDEN: 1n << 30n,
     };
 }
+
+export const isModerationHidden = (message: { flags?: number | bigint | null }) => (BigInt(message.flags ?? 0) & MessageFlags.FLAGS.MODERATION_HIDDEN) !== 0n;

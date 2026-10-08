@@ -1,0 +1,62 @@
+/*
+ * The recent avatars list is one flex line sized for 6, so a longer history pushed the whole picker wider than the
+ * modal. Keep it inside the modal and scroll it with arrow buttons instead of a scrollbar. Class hashes change
+ * between client builds, so match on the readable part of the class names.
+ */
+
+[class*="recentAvatarContainer_"],
+[class*="recentAvatarSlots_"] {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.fosscord-recent-avatars {
+    position: relative;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.fosscord-recent-avatars-list {
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+}
+
+.fosscord-recent-avatars-list::-webkit-scrollbar {
+    display: none;
+}
+
+.fosscord-recent-avatars-list > li {
+    flex: none;
+}
+
+.fosscord-recent-avatars-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    color: var(--interactive-active, #fff);
+    background: var(--background-floating, #111214);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+}
+
+.fosscord-recent-avatars-arrow:hover {
+    background: var(--brand-500, #5865f2);
+}
+
+.fosscord-recent-avatars-left {
+    left: -6px;
+}
+
+.fosscord-recent-avatars-right {
+    right: -6px;
+}

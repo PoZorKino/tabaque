@@ -13,7 +13,7 @@ const number = (value: unknown) => (typeof value === "string" && /^\d+$/.test(va
 
 // the shop's browse tabs and search box
 router.get("/", route({ responses: { 200: {} } }), async (req: Request, res: Response) => {
-    const { item_types, search, sort_type, sort_direction, offset, limit, is_first_party } = req.query;
+    const { item_types, search, sort_type, sort_direction, offset, limit, is_first_party, colors, themes } = req.query;
     res.json(
         await Collectibles.search({
             item_types: list(item_types),
@@ -22,6 +22,8 @@ router.get("/", route({ responses: { 200: {} } }), async (req: Request, res: Res
             sort_direction: typeof sort_direction === "string" ? sort_direction : undefined,
             offset: number(offset),
             limit: number(limit),
+            colors: list(colors),
+            themes: list(themes),
             first_party: is_first_party === "false" ? false : undefined,
         }),
     );

@@ -185,6 +185,7 @@ test("legacy gateway token refresh preserves the existing auth session and yield
                 },
             },
             InstanceBan: { hasInstanceBans: async () => false },
+            UserViolation: { find: async () => [] },
         },
         "@spacebar/extensions": {},
         "@spacebar/schemas": require("../../src/schemas/responses/AccountStandingResponse.ts"),

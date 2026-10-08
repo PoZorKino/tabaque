@@ -46,6 +46,7 @@ export interface AdminSettingsUpdateSchema {
         disabled?: boolean;
         allowNewRegistration?: boolean;
         requireInvite?: boolean;
+        requireApproval?: boolean;
         guestsRequireInvite?: boolean;
         requireCaptcha?: boolean;
         allowMultipleAccounts?: boolean;

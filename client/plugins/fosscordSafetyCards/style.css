@@ -1,0 +1,43 @@
+/*
+ * The safety cards in the official DM come from the client. Their icon box is 14px but the warning icon inside is
+ * 24px, so it ran into the title, and the bars used the bright button red with blue link text. Class hashes change
+ * between client builds, so match on the readable part of the names.
+ */
+
+/* the icon gets room, and the same size as the text next to it */
+[class*="safetyPolicyNoticeContainer_"] [class*="headerRow_"] > div:first-child {
+    display: flex;
+    flex: none;
+    align-items: center;
+    width: auto;
+    height: auto;
+    margin-inline-end: 8px;
+}
+
+[class*="safetyPolicyNoticeContainer_"] [class*="headerRow_"] svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* a quieter red for the bars at the bottom of the cards */
+[class*="safetyPolicyNoticeContainer_"] [class*="dangerFooterContainer_"],
+[class*="safetyPolicyNoticeContainer_"] [class*="footerContainer_"] {
+    background-color: #3f0f14;
+    color: #f2f3f5;
+}
+
+[class*="safetyPolicyNoticeContainer_"] [class*="dangerFooterContainer_"]:hover,
+[class*="safetyPolicyNoticeContainer_"] [class*="footerContainer_"]:hover {
+    background-color: #52151b;
+}
+
+/* link text on the bars is plain white and starts at the left edge, like the card text above it */
+[class*="safetyPolicyNoticeContainer_"] [class*="dangerFooterContainer_"] {
+    justify-content: flex-start;
+}
+
+[class*="safetyPolicyNoticeContainer_"] [class*="dangerFooterContainer_"] a,
+[class*="safetyPolicyNoticeContainer_"] [class*="dangerFooterContainer_"] button {
+    color: #f2f3f5;
+    font-weight: 500;
+}

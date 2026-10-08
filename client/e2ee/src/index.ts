@@ -165,6 +165,10 @@ const ui = createUi({
         await api.request("put", `/channels/${channelId}/e2ee`, { enabled: true });
         engine.setChannelEncrypted(channelId);
     },
+    disableChannel: async (channelId) => {
+        await api.request("put", `/channels/${channelId}/e2ee`, { enabled: false });
+        engine.setChannelPlain(channelId);
+    },
 });
 
 function sessionEnded() {
@@ -195,6 +199,7 @@ ready.then((ok) => {
 });
 
 const hooks = createHooks({
+    fetchEmbeds: async (urls) => (await api.request<{ embeds: Record<string, unknown[]> }>("post", "/e2ee/embeds", { urls })).embeds ?? {},
     engine,
     attachments,
     sticker,
@@ -366,6 +371,7 @@ const custom = {
     CHANNEL_E2EE_UPDATE: (data: Record<string, unknown>) => {
         count("CHANNEL_E2EE_UPDATE");
         if (data.enabled) engine.setChannelEncrypted(String(data.channel_id));
+        else engine.setChannelPlain(String(data.channel_id));
     },
 };
 

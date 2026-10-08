@@ -5,6 +5,7 @@ import { route } from "@spacebar/api/middlewares";
 import {
     decodeKey,
     e2eeChannelIdsFor,
+    e2eePlainChannelIdsFor,
     e2eeDeviceMessage,
     E2eeErrors,
     e2eeRateLimit,
@@ -23,8 +24,8 @@ import { E2eeIdentityUpdateSchema, E2eePasswordSchema, E2eeResetSchema, E2eeStat
 const router: Router = Router({ mergeParams: true });
 
 const state = async (userId: string): Promise<E2eeStateResponse> => {
-    const [users, channels] = await Promise.all([e2eeUserKeys([userId]), e2eeChannelIdsFor(userId)]);
-    return { ...users[userId], channels, private_by_default: true };
+    const [users, channels, plain_channels] = await Promise.all([e2eeUserKeys([userId]), e2eeChannelIdsFor(userId), e2eePlainChannelIdsFor(userId)]);
+    return { ...users[userId], channels, plain_channels, private_by_default: true };
 };
 
 router.get(

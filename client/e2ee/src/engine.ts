@@ -115,6 +115,7 @@ interface ServerUserKeys {
 interface ServerState extends ServerUserKeys {
     channels: string[];
     private_by_default?: boolean;
+    plain_channels?: string[];
 }
 
 export interface DirectoryDevice {
@@ -303,6 +304,8 @@ export class Engine {
     prekeys: StoredPrekey[] = [];
     contacts: Record<string, Contact> = {};
     encryptedChannels = new Set<string>();
+    // chats whose members switched encryption off
+    plainChannels = new Set<string>();
     backup: BackupRecord | null = null;
     backupKeyPair: { publicKey: string; keyPair: CryptoKeyPair } | null = null;
     private secret: Bytes | null = null;
@@ -723,6 +726,7 @@ export class Engine {
         const revoked = this.device && state.devices.find((d) => d.device_id === this.device!.deviceId)?.status === "revoked" ? this.device.deviceId : null;
         if (revoked && (await store.get<StoredDevice>("device"))?.deviceId === revoked) await this.wipeLocal(true);
         this.encryptedChannels = new Set(state.channels);
+        this.plainChannels = new Set(state.plain_channels ?? []);
         this.privateByDefault = state.private_by_default ?? this.privateByDefault;
         this.identity = (await store.get<StoredIdentity>("identity")) ?? null;
         this.trustedKey = (await store.get<string>("trusted-identity")) ?? null;
@@ -1017,12 +1021,20 @@ export class Engine {
         this.members.clear();
     }
 
+    setChannelPlain(channelId: string) {
+        this.encryptedChannels.delete(channelId);
+        this.plainChannels.add(channelId);
+        this.emit();
+    }
+
     setChannelEncrypted(channelId: string) {
+        this.plainChannels.delete(channelId);
         this.encryptedChannels.add(channelId);
         this.emit();
     }
 
     isEncrypted(channelId: string) {
+        if (this.plainChannels.has(channelId)) return false;
         return this.encryptedChannels.has(channelId) || this.classifyChannel(channelId, this.privateByDefault);
     }
 

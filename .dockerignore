@@ -15,6 +15,10 @@
 !scripts/vencord.js
 !scripts/default-avatars.js
 !scripts/dist-tsconfig.json
+!scripts/schema.js
+!scripts/register-paths.cjs
+!scripts/util
+!scripts/schemaExclusions.json
 !scripts/docker-configure.js
 !scripts/ops
 !scripts/ops/operator.mjs

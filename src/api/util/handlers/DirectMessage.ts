@@ -2,6 +2,7 @@ import { In } from "typeorm";
 import { Channel, Member, Message, Relationship, User, UserSettingsProtos } from "@spacebar/database";
 import { ChannelCreateEvent, ChannelUpdateEvent, DiscordApiErrors, DmChannelDTO, emitEvent } from "@spacebar/util";
 import { ChannelType, RelationshipType, UserFlags } from "@spacebar/schemas";
+import { limitedSince } from "../utility/accountStanding";
 
 export async function assertCanSendDirectMessage(channel: Channel, senderId: string): Promise<string[]> {
     if (channel.type !== ChannelType.DM) return [];
@@ -27,6 +28,8 @@ export async function assertCanSendDirectMessage(channel: Channel, senderId: str
         ],
     });
     if (relationships.some((r) => r.type === RelationshipType.BLOCKED)) throw DiscordApiErrors.CANNOT_MESSAGE_USER;
+    const since = await limitedSince(senderId);
+    if (since && !officialReply && !relationships.some((r) => r.type === RelationshipType.FRIEND && r.created_at < since)) throw DiscordApiErrors.CANNOT_MESSAGE_USER;
     if (officialReply || relationships.some((r) => r.type === RelationshipType.FRIEND)) return [];
 
     const [sender, recipient] = await Promise.all([senderId, recipientId].map(findUser));

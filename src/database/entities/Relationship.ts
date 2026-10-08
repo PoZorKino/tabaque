@@ -8,6 +8,10 @@ import { PartialRelationshipSchema, RelationshipSchema, RelationshipType } from 
 })
 @Index(["from_id", "to_id"], { unique: true })
 export class Relationship extends BaseClass {
+    // friends made after a limited-access violation cannot be messaged while it counts
+    @Column({ type: "timestamp", default: () => "now()" })
+    created_at: Date;
+
     @Column({})
     from_id: string;
 

@@ -68,6 +68,7 @@ function tokenFixture() {
                 findOne: async () => ({ user, scopes: [], id: "oauth", created_at: new Date() }),
             },
             InstanceBan: { hasInstanceBans: async () => false },
+            UserViolation: { find: async () => [] },
         },
         "@spacebar/extensions": {},
         "./Config": {

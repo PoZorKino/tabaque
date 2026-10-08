@@ -2,7 +2,7 @@ import { Request, Response, Router } from "express";
 import { In } from "typeorm";
 import { route } from "@spacebar/api/middlewares";
 import { Message, Member, Channel, Attachment, MentionDismissal, ThreadMember } from "@spacebar/database";
-import { Snowflake, Permissions, NewUrlUserSignatureData, FieldErrors, emitEvent, RecentMentionDeleteEvent, DiscordApiErrors } from "@spacebar/util";
+import { Snowflake, Permissions, NewUrlUserSignatureData, FieldErrors, emitEvent, RecentMentionDeleteEvent, DiscordApiErrors, isModerationHidden } from "@spacebar/util";
 import { ChannelType } from "@spacebar/schemas";
 import { Stopwatch } from "@spacebar/extensions";
 
@@ -161,18 +161,20 @@ router.get(
                     },
                 },
             })
-        ).map((m) => ({
-            ...m.toJSON(),
-            attachments: m.attachments?.map((attachment: Attachment) =>
-                Attachment.prototype.signUrls.call(
-                    attachment,
-                    new NewUrlUserSignatureData({
-                        ip: req.ip,
-                        userAgent: req.headers["user-agent"] as string,
-                    }),
+        )
+            .filter((m) => !isModerationHidden(m))
+            .map((m) => ({
+                ...m.toJSON(),
+                attachments: m.attachments?.map((attachment: Attachment) =>
+                    Attachment.prototype.signUrls.call(
+                        attachment,
+                        new NewUrlUserSignatureData({
+                            ip: req.ip,
+                            userAgent: req.headers["user-agent"] as string,
+                        }),
+                    ),
                 ),
-            ),
-        }));
+            }));
 
         console.log(`[Inbox/mentions] User ${user.id} fetched full message data for ${finalMessages.length} messages in ${sw.elapsed().totalMilliseconds}ms`);
 

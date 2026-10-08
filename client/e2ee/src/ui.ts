@@ -180,6 +180,7 @@ export interface UiOptions {
     ready: Promise<boolean>;
     states: Map<string, { state: MessageState; reason?: string }>;
     enableChannel: (channelId: string) => Promise<void>;
+    disableChannel: (channelId: string) => Promise<void>;
     link: {
         outgoing: () => Outgoing | null;
         request: () => Promise<void>;
@@ -190,7 +191,7 @@ export interface UiOptions {
     reset: (password: string) => Promise<void>;
 }
 
-export const createUi = ({ engine, ready, states, enableChannel, link, verifyPassword, reset }: UiOptions) => {
+export const createUi = ({ engine, ready, states, enableChannel, disableChannel, link, verifyPassword, reset }: UiOptions) => {
     const style = document.createElement("style");
     style.textContent = css;
     const bar = document.createElement("div");
@@ -436,7 +437,7 @@ export const createUi = ({ engine, ready, states, enableChannel, link, verifyPas
         dialog(t("Turn on end-to-end encryption?"), (body, actions, { close }) => {
             body.insertAdjacentHTML(
                 "beforeend",
-                `<p>${escape(t("New messages, files and stickers in this conversation are encrypted in your browser before they're sent, and only the people in it can read them. Encryption can't be turned off later."))}</p><p>${escape(t("Polls can't be sent in encrypted conversations."))}</p>`,
+                `<p>${escape(t("New messages, files and stickers in this conversation are encrypted in your browser before they're sent, and only the people in it can read them. Encryption can be turned off again for this conversation."))}</p><p>${escape(t("Polls can't be sent in encrypted conversations."))}</p>`,
             );
             const error = document.createElement("p");
             error.className = "fe2ee-error";
@@ -479,9 +480,33 @@ export const createUi = ({ engine, ready, states, enableChannel, link, verifyPas
                 .catch(() => {});
         });
 
+    const confirmDisable = (channelId: string) =>
+        dialog(t("Turn off encryption for this chat?"), (body, actions, { close }) => {
+            body.insertAdjacentHTML(
+                "beforeend",
+                `<p>${escape(t("New messages here are sent as plain text, so the server can read them and link previews work. Messages already sent stay encrypted. You can turn encryption back on at any time."))}</p>`,
+            );
+            const off = button(t("Turn off encryption"), "danger", async () => {
+                off.disabled = true;
+                try {
+                    await disableChannel(channelId);
+                    close();
+                } catch {
+                    off.disabled = false;
+                }
+            });
+            actions.append(button(t("Cancel"), "secondary", close), off);
+        });
+
     const showSafety = async (channelId: string) => {
         const list = await Promise.all((await engine.channelMembers(channelId)).map((id) => engine.profile(id)));
         dialog(t("Safety numbers"), (body, actions, { close }) => {
+            actions.append(
+                button(t("Turn off encryption"), "danger", () => {
+                    close();
+                    confirmDisable(channelId);
+                }),
+            );
             body.insertAdjacentHTML(
                 "beforeend",
                 `<p>${escape(t("Compare these numbers with each person in a call or face to face. If they match, nobody is intercepting your messages. Mark them as verified so you're warned if they change."))}</p>`,

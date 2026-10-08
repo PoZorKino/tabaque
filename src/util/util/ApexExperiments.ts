@@ -20,6 +20,7 @@ const defaults: Record<string, { variant: number; config?: object }> = {
     "2026-09-connected-thread-sidebar": { variant: 1 },
 };
 
+// users land in one of 10000 buckets per experiment, so a rollout is "bucket < percent * 100" and raising the percent only ever adds people
 export const ROLLOUT_BUCKETS = 10000;
 export const rolloutBucket = (name: string, userId: string) => murmur(`${name}:${userId}`) % ROLLOUT_BUCKETS;
 export const inRollout = (name: string, userId: string, percent: number) => rolloutBucket(name, userId) < Math.round(percent * (ROLLOUT_BUCKETS / 100));
@@ -43,6 +44,7 @@ export function getApexExperiments(userId?: string) {
     return { assignments: { 1: { [userId]: { evaluation_id: null, assignments } } } };
 }
 
+// what the client reads from a guild's `experiments`; only operator grants exist at this scope
 export function getGuildExperiments(guildId: string) {
     const grants = Config.get().client.guildExperiments?.[guildId];
     if (!grants) return undefined;
